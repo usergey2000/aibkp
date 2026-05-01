@@ -11,6 +11,17 @@ A parallel rsync backup system that backs up directory trees using parallel work
 - **Lock mechanism**: Prevents concurrent runs
 - **Log analysis**: Scans task logs for rsync errors
 
+## Test Data Generation
+
+The `create_test_data.sh` script generates test directory structures for testing the backup system:
+
+- Creates 10 subfolders with random depths (1-10 levels)
+- Each directory contains 1-20 files
+- Each folder includes a `README` file as a checkpoint marker
+- Outputs structure info showing created folders
+
+Run with: `./create_test_data.sh`
+
 ## Configuration
 
 | Environment Variable | Description |
