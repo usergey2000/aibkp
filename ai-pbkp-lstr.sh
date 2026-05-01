@@ -26,7 +26,7 @@ WEEKDAY_FILTER="climlab_scratch"
 SATURDAY_FILTER="314159027"
 
 # Log directory
-LOG_DIR="./lstrbkp/aitestlog"
+LOG_DIR="./bkplog"
 
 # Default concurrency (80% of available cores)
 CORES=$(nproc 2>/dev/null || echo 4)
