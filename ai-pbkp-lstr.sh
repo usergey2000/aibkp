@@ -75,7 +75,7 @@ calculate_depth() {
     local src_dir="$1"
     local max_depth=0
 
-    # Find directories at depth 1 under src_dir (direct children)
+    # Find all directories under src_dir (excluding src_dir itself)
     while IFS= read -r dir; do
         local rel_path="${dir#$src_dir}"
         # Remove leading slash for accurate depth calculation
@@ -85,7 +85,7 @@ calculate_depth() {
         if [[ $depth -gt $max_depth ]]; then
             max_depth=$depth
         fi
-    done < <(fd --type directory --min-depth 1 --max-depth 1 . "$src_dir" 2>/dev/null)
+    done < <(fd --type directory --min-depth 1 . "$src_dir" 2>/dev/null)
 
     # Return at least 1, or 0 if no directories found
     if [[ $max_depth -eq 0 ]]; then
