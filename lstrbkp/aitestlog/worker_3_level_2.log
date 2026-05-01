@@ -1,0 +1,94 @@
+Running: rsync -lptgoDzhHAx --delete -v --temp-dir=/tmp/rsync_temp -r --exclude=climlab_scratch /nfs/ihfs/home_metis/serguei/aibkpcl/test_data/folder_d2_3// /nfs/ihfs/home_metis/serguei/aibkpcl/test_backup3/folder_d2_3//
+sending incremental file list
+./
+README
+file_1.txt
+file_10.txt
+file_11.txt
+file_12.txt
+file_13.txt
+file_14.txt
+file_15.txt
+file_16.txt
+file_17.txt
+file_2.txt
+file_3.txt
+file_4.txt
+file_5.txt
+file_6.txt
+file_7.txt
+file_8.txt
+file_9.txt
+subdir_1_d1/
+subdir_1_d1/file_1.txt
+subdir_1_d1/file_10.txt
+subdir_1_d1/file_11.txt
+subdir_1_d1/file_12.txt
+subdir_1_d1/file_13.txt
+subdir_1_d1/file_2.txt
+subdir_1_d1/file_3.txt
+subdir_1_d1/file_4.txt
+subdir_1_d1/file_5.txt
+subdir_1_d1/file_6.txt
+subdir_1_d1/file_7.txt
+subdir_1_d1/file_8.txt
+subdir_1_d1/file_9.txt
+
+sent 4.05K bytes  received 616 bytes  9.34K bytes/sec
+total size is 2.27K  speedup is 0.49
+Running: rsync -lptgoDzhHAx --delete -v --temp-dir=/tmp/rsync_temp -r --exclude=climlab_scratch /nfs/ihfs/home_metis/serguei/aibkpcl/test_data/folder_d5_9// /nfs/ihfs/home_metis/serguei/aibkpcl/test_backup3/folder_d5_9//
+sending incremental file list
+./
+README
+file_1.txt
+file_10.txt
+file_11.txt
+file_12.txt
+file_13.txt
+file_14.txt
+file_15.txt
+file_16.txt
+file_17.txt
+file_2.txt
+file_3.txt
+file_4.txt
+file_5.txt
+file_6.txt
+file_7.txt
+file_8.txt
+file_9.txt
+subdir_1_d1/
+subdir_1_d1/file_1.txt
+subdir_1_d1/file_10.txt
+subdir_1_d1/file_11.txt
+subdir_1_d1/file_12.txt
+subdir_1_d1/file_13.txt
+subdir_1_d1/file_14.txt
+subdir_1_d1/file_15.txt
+subdir_1_d1/file_16.txt
+subdir_1_d1/file_17.txt
+subdir_1_d1/file_18.txt
+subdir_1_d1/file_2.txt
+subdir_1_d1/file_3.txt
+subdir_1_d1/file_4.txt
+subdir_1_d1/file_5.txt
+subdir_1_d1/file_6.txt
+subdir_1_d1/file_7.txt
+subdir_1_d1/file_8.txt
+subdir_1_d1/file_9.txt
+subdir_1_d1/subdir_1_d2/
+subdir_1_d1/subdir_1_d2/file_1.txt
+subdir_1_d1/subdir_1_d2/file_2.txt
+subdir_1_d1/subdir_1_d2/file_3.txt
+subdir_1_d1/subdir_1_d2/subdir_1_d3/
+subdir_1_d1/subdir_1_d2/subdir_1_d3/file_1.txt
+subdir_1_d1/subdir_1_d2/subdir_1_d3/subdir_1_d4/
+subdir_1_d1/subdir_1_d2/subdir_1_d3/subdir_1_d4/file_1.txt
+subdir_1_d1/subdir_1_d2/subdir_1_d3/subdir_1_d4/file_2.txt
+subdir_1_d1/subdir_1_d2/subdir_1_d3/subdir_1_d4/file_3.txt
+subdir_1_d1/subdir_1_d2/subdir_1_d3/subdir_1_d4/file_4.txt
+subdir_1_d1/subdir_1_d2/subdir_1_d3/subdir_1_d4/file_5.txt
+subdir_1_d1/subdir_1_d2/subdir_1_d3/subdir_1_d4/file_6.txt
+
+sent 6.24K bytes  received 913 bytes  14.30K bytes/sec
+total size is 3.76K  speedup is 0.53
