@@ -26,7 +26,7 @@ Run with: `./create_test_data.sh`
 
 | Environment Variable | Description |
 |---------------------|-------------|
-| `BACKUP_JOBS` | Source:destination pairs (semicolon-separated) |
+| `BACKUP_JOBS` | Source|destination pairs (semicolon-separated) |
 | `RSYNC_OPTS` | rsync flags (default: `-lptgoDzhHAx --delete -v --temp-dir=/tmp/rsync_temp`) |
 | `LOG_DIR` | Per-task logs directory (default: `./lstrbkp/aitestlog`) |
 
@@ -50,7 +50,7 @@ Run with: `./create_test_data.sh`
 
 ```bash
 # Backup multiple source directories
-export BACKUP_JOBS="/data:/backup/data;/projects:/backup/projects"
+export BACKUP_JOBS="/data|/backup/data;/projects|/backup/projects"
 ./ai-pbkp-lstr.sh --jobs 16
 
 # With custom temp directory

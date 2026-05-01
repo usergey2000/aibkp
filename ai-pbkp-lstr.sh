@@ -13,10 +13,10 @@ set -euo pipefail
 # Configuration
 # ==============================================================================
 
-# Source:destination pairs (semicolon-separated)
+# Source|destination pairs (semicolon-separated)
 # Default: local backup and remote backup to localhost
 # Remote format: server:path (rsync will use SSH for remote destinations)
-BACKUP_JOBS="${BACKUP_JOBS:-./test_data:./test_backup/test_data;./test_data:localhost:/nfs/ihfs/home_metis/serguei/aibkpcl/test_remote_backup/test_data}"
+BACKUP_JOBS="${BACKUP_JOBS:-./test_data|./test_backup/test_data;./test_data|localhost:/nfs/ihfs/home_metis/serguei/aibkpcl/test_remote_backup/test_data}"
 
 # rsync flags
 RSYNC_OPTS="-lptgoDzhHAx --delete -v --temp-dir=/tmp/rsync_temp"
@@ -347,7 +347,7 @@ main() {
     # Check that source directories have README files
     IFS=';' read -ra jobs_array <<< "$BACKUP_JOBS"
     for job in "${jobs_array[@]}"; do
-        IFS=':' read -r src dest <<< "$job"
+        IFS='|' read -r src dest <<< "$job"
         if [[ -d "$src" ]] && [[ ! -f "$src/README" ]]; then
             log_error "Source directory '$src' must contain a README file"
             exit 1
@@ -358,7 +358,7 @@ main() {
     if [[ "$depth_specified" != "true" ]]; then
         IFS=';' read -ra jobs_array <<< "$BACKUP_JOBS"
         for job in "${jobs_array[@]}"; do
-            IFS=':' read -r src dest <<< "$job"
+            IFS='|' read -r src dest <<< "$job"
             if [[ -d "$src" ]]; then
                 local calculated_depth
                 calculated_depth=$(calculate_depth "$src")
@@ -382,7 +382,7 @@ main() {
     # Process each backup job
     IFS=';' read -ra jobs_array <<< "$BACKUP_JOBS"
     for job in "${jobs_array[@]}"; do
-        IFS=':' read -r src dest <<< "$job"
+        IFS='|' read -r src dest <<< "$job"
 
         if [[ ! -d "$src" ]]; then
             log_error "Source directory does not exist: $src"
