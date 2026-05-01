@@ -247,15 +247,23 @@ run_worker_pool() {
 analyse_logs() {
     local log_dir="$1"
     local error_count=0
+    local error_summary=""
 
     log_info "Scanning logs for errors..."
 
     # Error patterns (case-insensitive) - specific rsync error messages
     local error_patterns=(
         "rsync error:"
-        "rsync error:"
         "error:"  # error: with colon indicates actual error
     )
+
+    for log_file in "$log_dir"/worker_*.log; do
+        [[ -f "$log_file" ]] || continue
+
+        while IFS= read -r line; do
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] [ERROR] $line" >> "$GLOBAL_LOG"
+        done < <(grep -i "error:" "$log_file" 2>/dev/null || true)
+    done
 
     for log_file in "$log_dir"/worker_*.log; do
         [[ -f "$log_file" ]] || continue
@@ -270,10 +278,12 @@ analyse_logs() {
 
     if [[ $error_count -gt 0 ]]; then
         log_error "Found $error_count error(s) in backup logs"
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] [ERROR] Error Summary: $error_count error(s) found in backup logs" >> "$GLOBAL_LOG"
         return 1
     fi
 
     log_info "No errors found in backup logs"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] Error Summary: No errors found" >> "$GLOBAL_LOG"
     return 0
 }
 
