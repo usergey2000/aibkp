@@ -169,8 +169,15 @@ process_worker() {
 
         local log_file="$log_dir/worker_${worker_id}_level_${level}.log"
 
-        # Create destination directory
-        mkdir -p "$dest"
+        # Parse destination to detect remote format (server:path)
+        # Remote format: remoteserver:path-to-remote-backup-folder
+        if [[ "$dest" =~ ^[^:]+:.+ ]]; then
+            # Remote destination - no local directory creation needed
+            : # do nothing
+        else
+            # Local destination - create directory
+            mkdir -p "$dest"
+        fi
 
         # Run rsync
         local rsync_cmd="rsync $RSYNC_OPTS"
