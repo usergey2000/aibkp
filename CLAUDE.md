@@ -38,7 +38,7 @@ Key environment/script constants:
 - `BACKUP_JOBS` - Source:destination pairs (semicolon-separated)
 - `RSYNC_OPTS` - rsync flags: `-lptgoDzhHAx --delete -v --temp-dir=/lstr/sahara/serguei/temp`
 - `SRCFILTER` - Directory patterns to exclude (`climlab_scratch` on weekdays, `314159027` on Saturday)
-- `LOG_DIR` - Per-task logs: `./lstrbkp/aitestlog`
+- `LOG_DIR` - Per-task logs: `./bkplog`
 
 ## Notes
 
@@ -50,3 +50,4 @@ Key environment/script constants:
 ## Important
 
 - **Do not commit test folders** (test_data, test_backup, test_backup4, test_remote_backup) - these are generated dynamically and should be removed before committing
+- **Do not commit log folders** (bkplog, lstrbkp) - these contain temporary backup logs and should not be committed
