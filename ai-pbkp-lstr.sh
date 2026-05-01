@@ -307,6 +307,7 @@ main() {
     local jobs="$DEFAULT_JOBS"
     local depth=""
     local depth_specified="false"
+    local cmd_args="$*"
 
     # Parse arguments
     while [[ $# -gt 0 ]]; do
@@ -345,6 +346,12 @@ main() {
     rm -f "$LOG_DIR"/worker_*.log
     rm -f "$LOG_DIR"/*.blg
     touch "$GLOBAL_LOG"
+
+    # Log job start time and configuration
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] Job started at $(date)" >> "$GLOBAL_LOG"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] BACKUP_JOBS=$BACKUP_JOBS" >> "$GLOBAL_LOG"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] Command: $0 $cmd_args" >> "$GLOBAL_LOG"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] --------------------------" >> "$GLOBAL_LOG"
 
     # Check that source directories have README files
     IFS=';' read -ra jobs_array <<< "$BACKUP_JOBS"
@@ -411,6 +418,10 @@ main() {
 
     # Analyse logs for errors
     analyse_logs "$LOG_DIR"
+
+    # Log job end time
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] --------------------------" >> "$GLOBAL_LOG"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] Job ended at $(date)" >> "$GLOBAL_LOG"
 }
 
 main "$@"
