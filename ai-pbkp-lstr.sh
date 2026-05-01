@@ -39,6 +39,9 @@ fi
 SCRIPT_NAME=$(basename "$0" .sh)
 LOCK_FILE="/tmp/.running_backup_${SCRIPT_NAME}"
 
+# Global log file (defined after SCRIPT_NAME is set)
+GLOBAL_LOG="${LOG_DIR}/${SCRIPT_NAME}_$(date '+%Y%m%d_%H%M%S').blg"
+
 # ==============================================================================
 # Utility Functions
 # ==============================================================================
@@ -47,6 +50,7 @@ log() {
     local level="$1"
     shift
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$level] $*" >&2
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$level] $*" >> "$GLOBAL_LOG"
 }
 
 log_info() { log "INFO" "$@"; }
@@ -339,6 +343,8 @@ main() {
     # Create log directory and clear old logs
     mkdir -p "$LOG_DIR"
     rm -f "$LOG_DIR"/worker_*.log
+    rm -f "$LOG_DIR"/*.blg
+    touch "$GLOBAL_LOG"
 
     # Check that source directories have README files
     IFS=';' read -ra jobs_array <<< "$BACKUP_JOBS"
