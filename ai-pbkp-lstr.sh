@@ -19,7 +19,7 @@ set -euo pipefail
 BACKUP_JOBS="${BACKUP_JOBS:-./test_data|./test_backup/test_data;./test_data|localhost:/nfs/ihfs/home_metis/serguei/aibkpcl/test_remote_backup/test_data}"
 
 # rsync flags
-RSYNC_OPTS="-lptgoDzhHAx --delete -v --temp-dir=/tmp/rsync_temp"
+RSYNC_OPTS="-lptgoDzhHAx --delete -v"
 
 # Directory patterns to exclude (weekdays vs Saturday)
 WEEKDAY_FILTER="climlab_scratch"
