@@ -132,10 +132,16 @@ build_task_queue() {
     local depth="$3"
     local task_queue="$4"
 
+    # Create a task directory with unique task files
+    local task_dir="${task_queue}.tasks"
+    rm -rf "$task_dir"
+    mkdir -p "$task_dir"
+
     # Find all directories under src_dir up to the specified depth
     # Directories at depth < specified: use --dirs (non-recursive)
     # Directories at depth == specified: use -r (recursive to cover full subtree)
-    fd --type directory --min-depth 1 . "$src_dir" | while read -r dir; do
+    local files=()
+    while IFS= read -r dir; do
         # Calculate depth relative to src_dir
         local rel_path="${dir#$src_dir}"
         rel_path="${rel_path#/}"
@@ -144,9 +150,18 @@ build_task_queue() {
 
         # Only include directories up to and including the specified depth
         if [[ $rel_depth -le $depth ]]; then
-            echo "$rel_depth|$dir|$dest_dir${dir#$src_dir}"
+            files+=("$dir|$rel_depth|$dest_dir${dir#$src_dir}")
         fi
-    done | sort -t'|' -k1 -n > "$task_queue"
+    done < <(fd --type directory --min-depth 1 . "$src_dir")
+
+    # Create task files
+    local task_id=0
+    for entry in "${files[@]}"; do
+        IFS='|' read -r dir rel_depth dest_path <<< "$entry"
+        local task_file="${task_dir}/task_$(printf '%06d' $task_id)"
+        echo "$rel_depth|$dir|$dest_path" > "$task_file"
+        ((task_id++)) || true
+    done
 }
 
 # ==============================================================================
@@ -155,29 +170,29 @@ build_task_queue() {
 
 process_worker() {
     local worker_id="$1"
-    local task_queue="$2"
+    local task_dir="$2"
     local log_dir="$3"
     local dry_run="$4"
 
     while true; do
-        # Atomically fetch next task using flock and awk to both read and remove
-        local task_file="${task_queue}.task"
-        local task
-        (
-            flock -x 200
-            task=$(awk 'NR==1' "$task_queue" 2>/dev/null)
-            if [[ -z "$task" ]]; then
-                rm -f "$task_file"
-                exit 0
-            fi
-            awk 'NR>1' "$task_queue" > "${task_queue}.tmp"
-            mv "${task_queue}.tmp" "$task_queue"
-            echo "$task" > "$task_file"
-        ) 200>"${task_queue}.lock"
+        # Atomically fetch next task by creating a task file with lock
+        local task_file
+        task_file=$(find "$task_dir" -name "task_*" -type f 2>/dev/null | head -1)
 
-        if [[ ! -f "$task_file" ]]; then
+        if [[ -z "$task_file" ]]; then
             break
         fi
+
+        # Try to claim the task by renaming it to .processing
+        local task_processing="${task_file}.processing"
+        if mv "$task_file" "$task_processing" 2>/dev/null; then
+            task_file="$task_processing"
+        else
+            # Task was already claimed by another worker
+            continue
+        fi
+
+        local task
         task=$(cat "$task_file")
         rm -f "$task_file"
 
@@ -234,6 +249,7 @@ process_worker() {
 
 run_worker_pool() {
     local task_queue="$1"
+    local task_dir="${task_queue}.tasks"
     local jobs="$2"
     local log_dir="$3"
     local dry_run="$4"
@@ -241,7 +257,7 @@ run_worker_pool() {
     # Create worker processes with staggered start to reduce race conditions
     local pids=()
     for ((i = 1; i <= jobs; i++)); do
-        process_worker "$i" "$task_queue" "$log_dir" "$dry_run" &
+        process_worker "$i" "$task_dir" "$log_dir" "$dry_run" &
         pids+=($!)
         sleep 0.05  # Small delay between starting each worker
     done
@@ -250,6 +266,9 @@ run_worker_pool() {
     for pid in "${pids[@]}"; do
         wait "$pid"
     done
+
+    # Clean up task directory
+    rm -rf "$task_dir"
 }
 
 # ==============================================================================
@@ -428,14 +447,11 @@ main() {
         build_task_queue "$src" "$dest" "$depth" "$task_queue"
 
         local task_count
-        task_count=$(wc -l < "$task_queue")
+        task_count=$(find "${task_queue}.tasks" -name "task_*" -type f 2>/dev/null | wc -l)
         log_info "Built task queue with $task_count tasks"
 
         # Run worker pool
         run_worker_pool "$task_queue" "$jobs" "$LOG_DIR" "$dry_run"
-
-        # Cleanup temp task queue
-        rm -f "$task_queue"
     done
 
     # Analyse logs for errors
