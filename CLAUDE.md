@@ -45,7 +45,7 @@ Key environment/script constants:
 - Each source directory must contain a `README` file (used as a checkpoint/check mechanism)
 - Lock file `/tmp/.running_backup_ai-pbkp-lstr` prevents concurrent runs
 - Error patterns are matched case-insensitively in log analysis
-- Host must be named "pbkp" for execution
+- Host name is not restricted (pbkp check removed)
 
 ## Important
 
