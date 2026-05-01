@@ -128,12 +128,20 @@ build_task_queue() {
     local depth="$3"
     local task_queue="$4"
 
-    # Find directories at depth 1 under src_dir (direct children)
-    fd --type directory --min-depth 1 --max-depth 1 "." "$src_dir" | while read -r dir; do
-        # Output task with depth relative to src_dir
+    # Find all directories under src_dir up to the specified depth
+    # Directories at depth < specified: use --dirs (non-recursive)
+    # Directories at depth == specified: use -r (recursive to cover full subtree)
+    fd --type directory --min-depth 1 . "$src_dir" | while read -r dir; do
+        # Calculate depth relative to src_dir
+        local rel_path="${dir#$src_dir}"
+        rel_path="${rel_path#/}"
         local rel_depth
-        rel_depth=$(echo "$dir" | sed "s|^$src_dir||" | tr -cd '/' | wc -c)
-        echo "$rel_depth|$dir|$dest_dir${dir#$src_dir}"
+        rel_depth=$(echo "$rel_path" | tr -cd '/' | wc -c)
+
+        # Only include directories up to and including the specified depth
+        if [[ $rel_depth -le $depth ]]; then
+            echo "$rel_depth|$dir|$dest_dir${dir#$src_dir}"
+        fi
     done | sort -t'|' -k1 -n > "$task_queue"
 }
 
