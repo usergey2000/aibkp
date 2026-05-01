@@ -35,15 +35,15 @@ bash -n ai-pbkp-lstr.sh
 ## Configuration
 
 Key environment/script constants:
-- `BACKUP_JOBS` - Source:destination pairs (semicolon-separated)
-- `RSYNC_OPTS` - rsync flags: `-lptgoDzhHAx --delete -v --temp-dir=/lstr/sahara/serguei/temp`
-- `SRCFILTER` - Directory patterns to exclude (`climlab_scratch` on weekdays, `314159027` on Saturday)
+- `BACKUP_JOBS` - Source|destination pairs (semicolon-separated; e.g., `./src|/dest;./src2|server:/path`)
+- `RSYNC_OPTS` - rsync flags: `-lptgoDzhHAx --delete -v --temp-dir=/tmp/rsync_temp`
+- `WEEKDAY_FILTER` / `SATURDAY_FILTER` - Directory patterns to exclude based on day of week
 - `LOG_DIR` - Per-task logs: `./bkplog`
 
 ## Notes
 
 - Each source directory must contain a `README` file (used as a checkpoint/check mechanism)
-- Lock file `/tmp/.running_backup_parallel-rsync-backup` prevents concurrent runs
+- Lock file `/tmp/.running_backup_ai-pbkp-lstr` prevents concurrent runs
 - Error patterns are matched case-insensitively in log analysis
 - Host must be named "pbkp" for execution
 
