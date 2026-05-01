@@ -66,14 +66,13 @@ get_filter() {
     fi
 }
 
-# Calculate the depth of a directory tree (max depth with README files)
+# Calculate the depth of a directory tree (max depth)
 calculate_depth() {
     local src_dir="$1"
     local max_depth=0
 
-    # Find directories at depth 1 under src_dir (direct children) with README files
+    # Find directories at depth 1 under src_dir (direct children)
     while IFS= read -r dir; do
-        [[ -f "$dir/README" ]] || continue
         local rel_path="${dir#$src_dir}"
         # Remove leading slash for accurate depth calculation
         rel_path="${rel_path#/}"
@@ -174,8 +173,10 @@ process_worker() {
         # Parse destination to detect remote format (server:path)
         # Remote format: remoteserver:path-to-remote-backup-folder
         if [[ "$dest" =~ ^[^:]+:.+ ]]; then
-            # Remote destination - no local directory creation needed
-            : # do nothing
+            # Remote destination - create remote directory using ssh
+            remote_host="${dest%%:*}"
+            remote_path="${dest#*:}"
+            ssh "$remote_host" "mkdir -p '$remote_path'"
         else
             # Local destination - create directory
             mkdir -p "$dest"
@@ -342,6 +343,16 @@ main() {
     # Create log directory and clear old logs
     mkdir -p "$LOG_DIR"
     rm -f "$LOG_DIR"/worker_*.log
+
+    # Check that source directories have README files
+    IFS=';' read -ra jobs_array <<< "$BACKUP_JOBS"
+    for job in "${jobs_array[@]}"; do
+        IFS=':' read -r src dest <<< "$job"
+        if [[ -d "$src" ]] && [[ ! -f "$src/README" ]]; then
+            log_error "Source directory '$src' must contain a README file"
+            exit 1
+        fi
+    done
 
     # If depth not specified, calculate from source directory structure
     if [[ "$depth_specified" != "true" ]]; then

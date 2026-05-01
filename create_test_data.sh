@@ -8,6 +8,9 @@ TEST_DIR="/nfs/ihfs/home_metis/serguei/aibkpcl/test_data"
 rm -rf "$TEST_DIR"
 mkdir -p "$TEST_DIR"
 
+# Create README file in test_data root
+echo "Test data directory - backup source" > "${TEST_DIR}/README"
+
 # Function to create random files in a directory
 create_files() {
     local dir="$1"

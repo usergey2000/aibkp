@@ -4,7 +4,8 @@
       "Bash(/usr/bin/fd --type directory --min-depth 1 --max-depth 2 \".\" /nfs/ihfs/home_metis/serguei/aibkpcl/test_data)",
       "Bash(TEST_MODE=true BACKUP_JOBS=\"/nfs/ihfs/home_metis/serguei/aibkpcl/test_data:/nfs/ihfs/home_metis/serguei/aibkpcl/test_backup\" /nfs/ihfs/home_metis/serguei/aibkpcl/ai-pbkp-lstr.sh --dry-run --jobs 4 --depth 3)",
       "Bash(TEST_MODE=true BACKUP_JOBS=\"/nfs/ihfs/home_metis/serguei/aibkpcl/test_data:/nfs/ihfs/home_metis/serguei/aibkpcl/test_backup\" /nfs/ihfs/home_metis/serguei/aibkpcl/ai-pbkp-lstr.sh *)",
-      "Bash(TEST_MODE=true BACKUP_JOBS=\"/nfs/ihfs/home_metis/serguei/aibkpcl/test_data:/nfs/ihfs/home_metis/serguei/aibkpcl/test_backup2\" /nfs/ihfs/home_metis/serguei/aibkpcl/ai-pbkp-lstr.sh *)"
+      "Bash(TEST_MODE=true BACKUP_JOBS=\"/nfs/ihfs/home_metis/serguei/aibkpcl/test_data:/nfs/ihfs/home_metis/serguei/aibkpcl/test_backup2\" /nfs/ihfs/home_metis/serguei/aibkpcl/ai-pbkp-lstr.sh *)",
+      "Bash(bash -n /nfs/ihfs/home_metis/serguei/aibkpcl/ai-pbkp-lstr.sh)"
     ]
   }
 }
