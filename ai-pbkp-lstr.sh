@@ -14,7 +14,9 @@ set -euo pipefail
 # ==============================================================================
 
 # Source:destination pairs (semicolon-separated)
-BACKUP_JOBS="${BACKUP_JOBS:-/source:/destination}"
+# Default: local backup and remote backup to localhost
+# Remote format: server:path (rsync will use SSH for remote destinations)
+BACKUP_JOBS="${BACKUP_JOBS:-./test_data:./test_backup/test_data;./test_data:localhost:/nfs/ihfs/home_metis/serguei/aibkpcl/test_remote_backup/test_data}"
 
 # rsync flags
 RSYNC_OPTS="-lptgoDzhHAx --delete -v --temp-dir=/tmp/rsync_temp"
