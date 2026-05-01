@@ -26,11 +26,16 @@ SATURDAY_FILTER="314159027"
 # Log directory
 LOG_DIR="./lstrbkp/aitestlog"
 
-# Default concurrency
-DEFAULT_JOBS=4
+# Default concurrency (80% of available cores)
+CORES=$(nproc 2>/dev/null || echo 4)
+DEFAULT_JOBS=$((CORES * 8 / 10))
+if [[ $DEFAULT_JOBS -lt 1 ]]; then
+    DEFAULT_JOBS=1
+fi
 
-# Lock file to prevent concurrent runs
-LOCK_FILE="/tmp/.running_backup_parallel-rsync-backup"
+# Lock file to prevent concurrent runs (use script name without extension)
+SCRIPT_NAME=$(basename "$0" .sh)
+LOCK_FILE="/tmp/.running_backup_${SCRIPT_NAME}"
 
 # ==============================================================================
 # Utility Functions
