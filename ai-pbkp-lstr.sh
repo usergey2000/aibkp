@@ -332,15 +332,6 @@ main() {
         esac
     done
 
-    # Check host name (skip if testing)
-    if [[ "${TEST_MODE:-}" != "true" ]]; then
-        local hostname
-        hostname=$(hostname -s 2>/dev/null || hostname)
-        if [[ "$hostname" != "pbkp" ]]; then
-            log_error "Host must be named 'pbkp' for execution"
-            exit 1
-        fi
-    fi
 
     # Acquire lock
     acquire_lock
