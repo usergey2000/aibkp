@@ -176,6 +176,11 @@ process_worker() {
             # Remote destination - create remote directory using ssh
             remote_host="${dest%%:*}"
             remote_path="${dest#*:}"
+            # Check if remote host is reachable
+            if ! ping -c 1 -W 5 "$remote_host" >/dev/null 2>&1 && ! ssh -o ConnectTimeout=5 -o BatchMode=yes "$remote_host" exit >/dev/null 2>&1; then
+                log_error "Remote host '$remote_host' is not reachable"
+                exit 1
+            fi
             ssh "$remote_host" "mkdir -p '$remote_path'"
         else
             # Local destination - create directory
