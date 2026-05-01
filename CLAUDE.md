@@ -46,3 +46,7 @@ Key environment/script constants:
 - Lock file `/tmp/.running_backup_parallel-rsync-backup` prevents concurrent runs
 - Error patterns are matched case-insensitively in log analysis
 - Host must be named "pbkp" for execution
+
+## Important
+
+- **Do not commit test folders** (test_data, test_backup, test_backup4, test_remote_backup) - these are generated dynamically and should be removed before committing
