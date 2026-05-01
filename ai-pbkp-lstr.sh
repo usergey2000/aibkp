@@ -30,9 +30,13 @@ LOG_DIR="./bkplog"
 
 # Default concurrency (80% of available cores)
 CORES=$(nproc 2>/dev/null || echo 4)
-DEFAULT_JOBS=$((CORES * 8 / 10))
+DEFAULT_JOBS=$((CORES * 4 / 10))
 if [[ $DEFAULT_JOBS -lt 1 ]]; then
     DEFAULT_JOBS=1
+fi
+# Cap at 20 workers to avoid race conditions with task queue
+if [[ $DEFAULT_JOBS -gt 20 ]]; then
+    DEFAULT_JOBS=20
 fi
 
 # Lock file to prevent concurrent runs (use script name without extension)
@@ -156,17 +160,17 @@ process_worker() {
     local dry_run="$4"
 
     while true; do
-        # Atomically fetch next task using flock
+        # Atomically fetch next task using flock and awk to both read and remove
         local task_file="${task_queue}.task"
         local task
         (
             flock -x 200
-            task=$(head -n1 "$task_queue" 2>/dev/null)
+            task=$(awk 'NR==1' "$task_queue" 2>/dev/null)
             if [[ -z "$task" ]]; then
                 rm -f "$task_file"
                 exit 0
             fi
-            tail -n +2 "$task_queue" > "${task_queue}.tmp"
+            awk 'NR>1' "$task_queue" > "${task_queue}.tmp"
             mv "${task_queue}.tmp" "$task_queue"
             echo "$task" > "$task_file"
         ) 200>"${task_queue}.lock"
