@@ -28,9 +28,42 @@ SATURDAY_FILTER="314159027"
 # Log directory
 LOG_DIR="./bkplog"
 
-# Default concurrency (80% of available cores)
-CORES=$(nproc 2>/dev/null || echo 4)
-DEFAULT_JOBS=$((CORES * 4 / 10))
+# Function to get core count from a host (local or remote)
+get_host_cores() {
+    local host="$1"
+    if [[ "$host" == "localhost" ]] || [[ "$host" == "127.0.0.1" ]] || [[ "$host" == "$(hostname)" ]]; then
+        nproc 2>/dev/null || echo 4
+    else
+        # SSH to remote host and get core count, filtering out ANSI codes
+        ssh -o ConnectTimeout=5 -o BatchMode=yes "$host" "nproc" 2>/dev/null | tr -cd '[:digit:]' || echo 4
+    fi
+}
+
+# Calculate minimum cores across all hosts in BACKUP_JOBS
+calculate_min_cores() {
+    local min_cores
+    local cores
+    min_cores=$(nproc 2>/dev/null || echo 4)
+
+    # Parse BACKUP_JOBS to extract remote hosts
+    IFS=';' read -ra jobs_array <<< "$BACKUP_JOBS"
+    for job in "${jobs_array[@]}"; do
+        IFS='|' read -r src dest <<< "$job"
+        # Extract host from destination (format: server:path or just path for local)
+        if [[ "$dest" =~ ^([^:]+): ]]; then
+            local host="${BASH_REMATCH[1]}"
+            cores=$(get_host_cores "$host")
+            if [[ $cores -lt $min_cores ]]; then
+                min_cores=$cores
+            fi
+        fi
+    done
+    echo "$min_cores"
+}
+
+# Default concurrency (80% of minimum cores across all hosts)
+MIN_CORES=$(calculate_min_cores)
+DEFAULT_JOBS=$((MIN_CORES * 4 / 10))
 if [[ $DEFAULT_JOBS -lt 1 ]]; then
     DEFAULT_JOBS=1
 fi

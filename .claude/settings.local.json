@@ -6,7 +6,8 @@
       "Bash(TEST_MODE=true BACKUP_JOBS=\"/nfs/ihfs/home_metis/serguei/aibkpcl/test_data:/nfs/ihfs/home_metis/serguei/aibkpcl/test_backup\" /nfs/ihfs/home_metis/serguei/aibkpcl/ai-pbkp-lstr.sh *)",
       "Bash(TEST_MODE=true BACKUP_JOBS=\"/nfs/ihfs/home_metis/serguei/aibkpcl/test_data:/nfs/ihfs/home_metis/serguei/aibkpcl/test_backup2\" /nfs/ihfs/home_metis/serguei/aibkpcl/ai-pbkp-lstr.sh *)",
       "Bash(bash -n /nfs/ihfs/home_metis/serguei/aibkpcl/ai-pbkp-lstr.sh)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "Bash(bash -n /nfs/ihfs/home_metis/serguei/aibkpcl/ai-backup.sh)"
     ]
   }
 }
