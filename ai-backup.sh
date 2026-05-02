@@ -463,6 +463,7 @@ main() {
     # Log job start time and configuration
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] Job started at $(date)" >> "$GLOBAL_LOG"
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] BACKUP_JOBS=$BACKUP_JOBS" >> "$GLOBAL_LOG"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] MAX_JOBS=$MAX_JOBS" >> "$GLOBAL_LOG"
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] Command: $0 $cmd_args" >> "$GLOBAL_LOG"
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] --------------------------" >> "$GLOBAL_LOG"
 
