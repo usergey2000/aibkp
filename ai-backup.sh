@@ -12,7 +12,9 @@ set -euo pipefail
 # ==============================================================================
 # Configuration
 # ==============================================================================
-
+ADMIN_EMAIL="admin@metis.niu.edu"
+DATE="$(date +%Y%m%d)"
+HOSTNAME="$(hostname -s)"
 # Source|destination pairs (semicolon-separated)
 # Default: local backup and remote backup to localhost
 # Remote format: server:path (rsync will use SSH for remote destinations)
@@ -138,6 +140,11 @@ acquire_lock() {
         pid=$(cat "$LOCK_FILE" 2>/dev/null)
         if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
             log_error "Backup already running (PID: $pid)"
+            #Admin have to check the problem or no futher backups will be done
+            log  "Backup at $HOSTNAME @ $DATE: Lock file $LOCKFILE is present; assume the previous backup is still running; exit" 
+            #                                                                      
+            echo "FYI" | mailx -s "Backup at $HOSTNAME @ $DATE: Lock file $LOCKFILE is present; assume the previous backup is still running; exit"  ${ADMIN_EMAIL}
+
             exit 1
         fi
         # Stale lock file, remove it
