@@ -35,16 +35,16 @@ Run with: `./create_test_data.sh`
 
 ```bash
 # Basic backup (uses 80% of available cores automatically)
-./ai-pbkp-lstr.sh
+./ai-backup.sh
 
 # With custom concurrency and depth
-./ai-pbkp-lstr.sh --jobs 8 --depth 3
+./ai-backup.sh --jobs 8 --depth 3
 
 # Dry run (no changes made)
-./ai-pbkp-lstr.sh --dry-run --jobs 4
+./ai-backup.sh --dry-run --jobs 4
 
 # Show help
-./ai-pbkp-lstr.sh --help
+./ai-backup.sh --help
 ```
 
 ## Examples
@@ -52,11 +52,11 @@ Run with: `./create_test_data.sh`
 ```bash
 # Backup multiple source directories
 export BACKUP_JOBS="/data|/backup/data;/projects|/backup/projects"
-./ai-pbkp-lstr.sh --jobs 16
+./ai-backup.sh --jobs 16
 
 # With custom rsync options
 export RSYNC_OPTS="-lptgoDzhHAx --delete -v --temp-dir=/tmp/rsync"
-./ai-pbkp-lstr.sh --depth 5
+./ai-backup.sh --depth 5
 ```
 
 ## Requirements
