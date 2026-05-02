@@ -63,7 +63,7 @@ calculate_min_cores() {
 
 # Default concurrency (80% of minimum cores across all hosts)
 MIN_CORES=$(calculate_min_cores)
-MAX_JOBS=$((MIN_CORES * 4 / 10))
+MAX_JOBS=$((MIN_CORES * 4 / 5))
 if [[ $MAX_JOBS -lt 1 ]]; then
     MAX_JOBS=1
 fi
