@@ -137,10 +137,15 @@ build_task_queue() {
     rm -rf "$task_dir"
     mkdir -p "$task_dir"
 
+    # Add source directory itself as a task (for files directly in source)
+    # This ensures files in the root source folder are backed up
+    local task_file="${task_dir}/task_$(printf '%06d' 0)"
+    echo "0|$src_dir|$dest_dir" > "$task_file"
+    local task_id=1
+
     # Find all directories under src_dir up to the specified depth
     # Directories at depth < specified: use --dirs (non-recursive)
     # Directories at depth == specified: use -r (recursive to cover full subtree)
-    local files=()
     while IFS= read -r dir; do
         # Calculate depth relative to src_dir
         local rel_path="${dir#$src_dir}"
@@ -150,101 +155,86 @@ build_task_queue() {
 
         # Only include directories up to and including the specified depth
         if [[ $rel_depth -le $depth ]]; then
-            files+=("$dir|$rel_depth|$dest_dir${dir#$src_dir}")
+            local entry="$dir|$rel_depth|$dest_dir${dir#$src_dir}"
+            IFS='|' read -r d rel_depth dest_path <<< "$entry"
+            task_file="${task_dir}/task_$(printf '%06d' $task_id)"
+            echo "$rel_depth|$d|$dest_path" > "$task_file"
+            ((task_id++)) || true
         fi
     done < <(fd --type directory --min-depth 1 . "$src_dir")
-
-    # Create task files
-    local task_id=0
-    for entry in "${files[@]}"; do
-        IFS='|' read -r dir rel_depth dest_path <<< "$entry"
-        local task_file="${task_dir}/task_$(printf '%06d' $task_id)"
-        echo "$rel_depth|$dir|$dest_path" > "$task_file"
-        ((task_id++)) || true
-    done
 }
 
 # ==============================================================================
 # Phase 2: Pool - Worker Pool Management
 # ==============================================================================
 
-process_worker() {
-    local worker_id="$1"
-    local task_dir="$2"
-    local log_dir="$3"
-    local dry_run="$4"
+process_task() {
+    local task_file="$1"
+    local log_dir="$2"
+    local dry_run="$3"
+    local max_depth="$4"
 
-    while true; do
-        # Atomically fetch next task by creating a task file with lock
-        local task_file
-        task_file=$(find "$task_dir" -name "task_*" -type f 2>/dev/null | head -1)
+    local task
+    task=$(cat "$task_file")
+    rm -f "$task_file"
 
-        if [[ -z "$task_file" ]]; then
-            break
+    local level src dest
+    IFS='|' read -r level src dest <<< "$task"
+
+    # Use worker_id based on task file number for consistent logging
+    local worker_id="${task_file##*/}"
+    worker_id="${worker_id#task_}"
+    local log_file="$log_dir/task_${worker_id}.log"
+
+    # Parse destination to detect remote format (server:path)
+    # Remote format: remoteserver:path-to-remote-backup-folder
+    if [[ "$dest" =~ ^[^:]+:.+ ]]; then
+        # Remote destination - create remote directory using ssh
+        local remote_host="${dest%%:*}"
+        local remote_path="${dest#*:}"
+        # Check if remote host is reachable
+        if ! ping -c 1 -W 5 "$remote_host" >/dev/null 2>&1 && ! ssh -o ConnectTimeout=5 -o BatchMode=yes "$remote_host" exit >/dev/null 2>&1; then
+            log_error "Remote host '$remote_host' is not reachable"
+            return 1
         fi
+        ssh "$remote_host" "mkdir -p '$remote_path'" 2>&1 | tee -a "$log_file"
+    else
+        # Local destination - create directory
+        mkdir -p "$dest"
+    fi
 
-        # Try to claim the task by renaming it to .processing
-        local task_processing="${task_file}.processing"
-        if mv "$task_file" "$task_processing" 2>/dev/null; then
-            task_file="$task_processing"
-        else
-            # Task was already claimed by another worker
-            continue
-        fi
+    # Run rsync
+    local rsync_cmd="rsync $RSYNC_OPTS"
 
-        local task
-        task=$(cat "$task_file")
-        rm -f "$task_file"
+    # Handle the root task (level 0) specially - always recursive to include all files
+    # For subdirectories: --dirs for shallower, -r for max depth
+    if [[ "$level" -eq 0 ]]; then
+        # Root task - always recursive to backup all files and subdirectories
+        rsync_cmd="$rsync_cmd -r"
+    elif [[ "$level" -lt "$max_depth" ]]; then
+        # Non-recursive for shallower directories (just the directory itself)
+        rsync_cmd="$rsync_cmd --dirs"
+    else
+        # Recursive for max depth (covers full subtree)
+        rsync_cmd="$rsync_cmd -r"
+    fi
 
-        local level src dest
-        IFS='|' read -r level src dest <<< "$task"
+    # Apply filter
+    local filter
+    filter=$(get_filter)
+    rsync_cmd="$rsync_cmd --exclude=$filter"
 
-        local log_file="$log_dir/worker_${worker_id}_level_${level}.log"
+    # Dry run flag
+    if [[ "$dry_run" == "true" ]]; then
+        rsync_cmd="$rsync_cmd --dry-run"
+    fi
 
-        # Parse destination to detect remote format (server:path)
-        # Remote format: remoteserver:path-to-remote-backup-folder
-        if [[ "$dest" =~ ^[^:]+:.+ ]]; then
-            # Remote destination - create remote directory using ssh
-            remote_host="${dest%%:*}"
-            remote_path="${dest#*:}"
-            # Check if remote host is reachable
-            if ! ping -c 1 -W 5 "$remote_host" >/dev/null 2>&1 && ! ssh -o ConnectTimeout=5 -o BatchMode=yes "$remote_host" exit >/dev/null 2>&1; then
-                log_error "Remote host '$remote_host' is not reachable"
-                exit 1
-            fi
-            ssh "$remote_host" "mkdir -p '$remote_path'"
-        else
-            # Local destination - create directory
-            mkdir -p "$dest"
-        fi
+    rsync_cmd="$rsync_cmd $src/ $dest/"
 
-        # Run rsync
-        local rsync_cmd="rsync $RSYNC_OPTS"
-
-        if [[ "$level" -lt "$depth" ]]; then
-            # Non-recursive for shallower directories
-            rsync_cmd="$rsync_cmd --dirs"
-        else
-            # Recursive for depth (covers full subtree)
-            rsync_cmd="$rsync_cmd -r"
-        fi
-
-        # Apply filter
-        local filter
-        filter=$(get_filter)
-        rsync_cmd="$rsync_cmd --exclude=$filter"
-
-        # Dry run flag
-        if [[ "$dry_run" == "true" ]]; then
-            rsync_cmd="$rsync_cmd --dry-run"
-        fi
-
-        rsync_cmd="$rsync_cmd $src/ $dest/"
-
-        log_info "Worker $worker_id: $rsync_cmd"
-        echo "Running: $rsync_cmd" >> "$log_file"
-        eval "$rsync_cmd" >> "$log_file" 2>&1 || true
-    done
+    log_info "Task $worker_id: $rsync_cmd"
+    echo "Running: $rsync_cmd" >> "$log_file"
+    eval "$rsync_cmd" >> "$log_file" 2>&1
+    return $?
 }
 
 run_worker_pool() {
@@ -253,18 +243,65 @@ run_worker_pool() {
     local jobs="$2"
     local log_dir="$3"
     local dry_run="$4"
+    local max_depth="$5"
 
-    # Create worker processes with staggered start to reduce race conditions
-    local pids=()
-    for ((i = 1; i <= jobs; i++)); do
-        process_worker "$i" "$task_dir" "$log_dir" "$dry_run" &
-        pids+=($!)
-        sleep 0.05  # Small delay between starting each worker
+    # Store running PIDs in an array
+    local running_pids=()
+    local task_count=0
+
+    while true; do
+        # Get next available task
+        local task_file
+        task_file=$(find "$task_dir" -name "task_*" -type f 2>/dev/null | head -1)
+
+        if [[ -z "$task_file" ]]; then
+            # No more tasks to process
+            break
+        fi
+
+        # Try to claim the task by renaming it to .processing
+        local task_processing="${task_file}.processing"
+        if mv "$task_file" "$task_processing" 2>/dev/null; then
+            task_file="$task_processing"
+        else
+            # Task was already claimed by another process, wait briefly
+            sleep 0.05
+            continue
+        fi
+
+        # Start task in background
+        process_task "$task_file" "$log_dir" "$dry_run" "$max_depth" &
+        local pid=$!
+        running_pids+=($pid)
+        ((task_count++)) || true
+
+        # If we've hit the job limit, wait for at least one to complete
+        if [[ ${#running_pids[@]} -ge $jobs ]]; then
+            # Wait for any one job to complete
+            local found_completed=false
+            local new_pids=()
+
+            for pid in "${running_pids[@]}"; do
+                if ! kill -0 "$pid" 2>/dev/null; then
+                    wait "$pid" 2>/dev/null || true
+                    found_completed=true
+                    # Skip this pid (it's done)
+                else
+                    new_pids+=("$pid")
+                fi
+            done
+            running_pids=("${new_pids[@]}")
+
+            # If no job completed (all still running), wait a bit
+            if [[ "$found_completed" == "false" ]]; then
+                sleep 0.1
+            fi
+        fi
     done
 
-    # Wait for all workers
-    for pid in "${pids[@]}"; do
-        wait "$pid"
+    # Wait for all remaining jobs to complete
+    for pid in "${running_pids[@]}"; do
+        wait "$pid" 2>/dev/null || true
     done
 
     # Clean up task directory
@@ -451,7 +488,7 @@ main() {
         log_info "Built task queue with $task_count tasks"
 
         # Run worker pool
-        run_worker_pool "$task_queue" "$jobs" "$LOG_DIR" "$dry_run"
+        run_worker_pool "$task_queue" "$jobs" "$LOG_DIR" "$dry_run" "$depth"
     done
 
     # Analyse logs for errors

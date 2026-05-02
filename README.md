@@ -1,15 +1,16 @@
 # aibkp - Parallel Rsync Backup System
 
-A parallel rsync backup system that backs up directory trees using parallel workers.
+A parallel rsync backup system that backs up directory trees using parallel workers with configurable concurrency.
 
 ## Features
 
 - **Three-phase execution**: Expand (build task queue) → Pool (parallel workers) → Analyse (scan for errors)
-- **Parallel workers**: Controlled concurrency via `--jobs` option
+- **Parallel workers**: Controlled concurrency via `--jobs` option (maximum concurrent rsync operations)
 - **Automatic depth detection**: Calculates max depth of source directories with README files
 - **Filter support**: Different exclude patterns for weekdays vs Saturday
 - **Lock mechanism**: Prevents concurrent runs
 - **Log analysis**: Scans task logs for rsync errors
+- **Root file backup**: Includes files directly in the source folder
 
 ## Test Data Generation
 
@@ -27,8 +28,8 @@ Run with: `./create_test_data.sh`
 | Environment Variable | Description |
 |---------------------|-------------|
 | `BACKUP_JOBS` | Source|destination pairs (semicolon-separated) |
-| `RSYNC_OPTS` | rsync flags (default: `-lptgoDzhHAx --delete -v --temp-dir=/tmp/rsync_temp`) |
-| `LOG_DIR` | Per-task logs directory (default: `./lstrbkp/aitestlog`) |
+| `RSYNC_OPTS` | rsync flags (default: `-lptgoDzhHAx --delete -v`) |
+| `LOG_DIR` | Per-task logs directory (default: `./bkplog`) |
 
 ## Usage
 
@@ -53,7 +54,7 @@ Run with: `./create_test_data.sh`
 export BACKUP_JOBS="/data|/backup/data;/projects|/backup/projects"
 ./ai-pbkp-lstr.sh --jobs 16
 
-# With custom temp directory
+# With custom rsync options
 export RSYNC_OPTS="-lptgoDzhHAx --delete -v --temp-dir=/tmp/rsync"
 ./ai-pbkp-lstr.sh --depth 5
 ```
@@ -70,3 +71,5 @@ export RSYNC_OPTS="-lptgoDzhHAx --delete -v --temp-dir=/tmp/rsync"
 - Each source directory must contain a `README` file (used as a checkpoint/check mechanism)
 - Lock file prevents concurrent runs: `/tmp/.running_backup_<script_name>`
 - Error patterns are matched case-insensitively in log analysis
+- The `--jobs` option limits the maximum number of concurrent rsync operations
+- Files in the root source folder are included in the backup
