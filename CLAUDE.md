@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This repository contains a parallel rsync backup system:
 
-1. **ai-pbkp-lstr.sh** - Bash implementation with parallel workers
+1. **ai-backup.sh** - Bash implementation with parallel workers
 
 ## Key Architecture
 
@@ -29,7 +29,7 @@ This repository contains a parallel rsync backup system:
 
 ```bash
 # Run the Bash version
-./ai-pbkp-lstr.sh [--dry-run] [--jobs N] [--depth N]
+./ai-backup.sh [--dry-run] [--jobs N] [--depth N]
 
 # Validate syntax
 bash -n ai-pbkp-lstr.sh
