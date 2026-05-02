@@ -63,9 +63,9 @@ calculate_min_cores() {
 
 # Default concurrency (80% of minimum cores across all hosts)
 MIN_CORES=$(calculate_min_cores)
-DEFAULT_JOBS=$((MIN_CORES * 4 / 10))
-if [[ $DEFAULT_JOBS -lt 1 ]]; then
-    DEFAULT_JOBS=1
+MAX_JOBS=$((MIN_CORES * 4 / 10))
+if [[ $MAX_JOBS -lt 1 ]]; then
+    MAX_JOBS=1
 fi
 
 # Lock file to prevent concurrent runs (use script name without extension)
@@ -394,7 +394,7 @@ Usage: $0 [--dry-run] [--jobs N] [--depth N]
 
 Options:
     --dry-run   Show what would be done without making changes
-    --jobs N    Number of parallel workers (default: $DEFAULT_JOBS)
+    --jobs N    Number of parallel workers (default: $MAX_JOBS)
     --depth N   Maximum directory depth to process (default: calculated from source)
     --help      Show this help message
 
@@ -411,7 +411,7 @@ EOF
 
 main() {
     local dry_run="false"
-    local jobs="$DEFAULT_JOBS"
+    local jobs="$MAX_JOBS"
     local depth=""
     local depth_specified="false"
     local cmd_args="$*"
@@ -425,9 +425,9 @@ main() {
                 ;;
             --jobs)
                 local specified_jobs="$2"
-                # Use DEFAULT_JOBS if --jobs is greater than DEFAULT_JOBS
-                if [[ $specified_jobs -gt $DEFAULT_JOBS ]]; then
-                    jobs="$DEFAULT_JOBS"
+                # Use MAX_JOBS if --jobs is greater than MAX_JOBS
+                if [[ $specified_jobs -gt $MAX_JOBS ]]; then
+                    jobs="$MAX_JOBS"
                 else
                     jobs="$specified_jobs"
                 fi
