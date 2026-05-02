@@ -34,8 +34,8 @@ get_host_cores() {
     if [[ "$host" == "localhost" ]] || [[ "$host" == "127.0.0.1" ]] || [[ "$host" == "$(hostname)" ]]; then
         nproc 2>/dev/null || echo 4
     else
-        # SSH to remote host and get core count, filtering out ANSI codes
-        ssh -o ConnectTimeout=5 -o BatchMode=yes "$host" "nproc" 2>/dev/null | tr -cd '[:digit:]' || echo 4
+        # SSH to remote host and get core count, filtering out ANSI codes using head -1
+        ssh -o ConnectTimeout=5 -o BatchMode=yes "$host" "nproc" 2>/dev/null | head -1 || echo 4
     fi
 }
 
