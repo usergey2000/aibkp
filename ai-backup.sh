@@ -424,7 +424,13 @@ main() {
                 shift
                 ;;
             --jobs)
-                jobs="$2"
+                local specified_jobs="$2"
+                # Use DEFAULT_JOBS if --jobs is greater than DEFAULT_JOBS
+                if [[ $specified_jobs -gt $DEFAULT_JOBS ]]; then
+                    jobs="$DEFAULT_JOBS"
+                else
+                    jobs="$specified_jobs"
+                fi
                 shift 2
                 ;;
             --depth)
