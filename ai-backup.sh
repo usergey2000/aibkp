@@ -67,10 +67,6 @@ DEFAULT_JOBS=$((MIN_CORES * 4 / 10))
 if [[ $DEFAULT_JOBS -lt 1 ]]; then
     DEFAULT_JOBS=1
 fi
-# Cap at 20 workers to avoid race conditions with task queue
-if [[ $DEFAULT_JOBS -gt 20 ]]; then
-    DEFAULT_JOBS=20
-fi
 
 # Lock file to prevent concurrent runs (use script name without extension)
 SCRIPT_NAME=$(basename "$0" .sh)
