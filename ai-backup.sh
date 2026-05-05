@@ -80,6 +80,30 @@ LOCK_FILE="/tmp/.running_backup_${SCRIPT_NAME}"
 # Global log file (defined after SCRIPT_NAME is set)
 GLOBAL_LOG="${LOG_DIR}/${SCRIPT_NAME}_$(date '+%Y%m%d_%H%M%S').blg"
 
+# Check for fd (fast directory finder) dependency
+check_fd_dependencies() {
+    if ! command -v fd &> /dev/null; then
+        log_error "Command 'fd' not found. Please install the fd-find package:"
+        log_error "  sudo apt-get install fd-find  # Debian/Ubuntu"
+        log_error "  sudo yum install fd-find      # RHEL/CentOS"
+        log_error "  brew install fd               # macOS"
+        exit 1
+    fi
+
+    # Verify fd version (requires fd 8.0+ for --min-depth)
+    local fd_version
+    fd_version=$(fd --version | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+    if [[ -n "$fd_version" ]]; then
+        local major
+        major=$(echo "$fd_version" | cut -d. -f1)
+        if [[ $major -lt 8 ]]; then
+            log_error "fd version $fd_version found, but version 8.0+ is required"
+            log_error "Please update fd-find package"
+            exit 1
+        fi
+    fi
+}
+
 # ==============================================================================
 # Utility Functions
 # ==============================================================================
@@ -420,6 +444,9 @@ EOF
 # ==============================================================================
 
 main() {
+    # Check dependencies
+    check_fd_dependencies
+
     local dry_run="false"
     local jobs="$MAX_JOBS"
     local depth=""
