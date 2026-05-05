@@ -15,10 +15,14 @@ set -euo pipefail
 ADMIN_EMAIL="admin@metis.niu.edu"
 DATE="$(date +%Y%m%d)"
 HOSTNAME="$(hostname -s)"
-# Source|destination pairs (semicolon-separated)
+# Source|destination pairs (array of "source;destination" strings)
 # Default: local backup and remote backup to localhost
 # Remote format: server:path (rsync will use SSH for remote destinations)
-BACKUP_JOBS="${BACKUP_JOBS:-./test_data|./test_backup/test_data;./test_data|localhost:/nfs/ihfs/home_metis/serguei/aibkpcl/test_remote_backup/test_data}"
+# Example: export BACKUP_JOBS=("./src|/dest" "server:/path|/local/dest")
+# To override: export BACKUP_JOBS=("./src|/dest" "server:/path|/local/dest")
+if [[ ${#BACKUP_JOBS[@]} -eq 0 ]] 2>/dev/null; then
+    BACKUP_JOBS=("./test_data|./test_backup/test_data" "./test_data|localhost:/nfs/ihfs/home_metis/serguei/aibkpcl/test_remote_backup/test_data")
+fi
 
 # rsync flags
 RSYNC_OPTS="-lptgoDzhHAx --delete -v"
@@ -48,8 +52,7 @@ calculate_min_cores() {
     min_cores=$(nproc 2>/dev/null || echo 4)
 
     # Parse BACKUP_JOBS to extract remote hosts
-    IFS=';' read -ra jobs_array <<< "$BACKUP_JOBS"
-    for job in "${jobs_array[@]}"; do
+    for job in "${BACKUP_JOBS[@]}"; do
         IFS='|' read -r src dest <<< "$job"
         # Extract host from destination (format: server:path or just path for local)
         if [[ "$dest" =~ ^([^:]+): ]]; then
@@ -406,7 +409,7 @@ Options:
     --help      Show this help message
 
 Configuration (environment variables):
-    BACKUP_JOBS   Source:destination pairs (semicolon-separated)
+    BACKUP_JOBS   Array of "source;destination" pairs
     RSYNC_OPTS    rsync flags (default: $RSYNC_OPTS)
     LOG_DIR       Per-task logs directory (default: $LOG_DIR)
 EOF
@@ -469,14 +472,13 @@ main() {
 
     # Log job start time and configuration
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] Job started at $(date)" >> "$GLOBAL_LOG"
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] BACKUP_JOBS=$BACKUP_JOBS" >> "$GLOBAL_LOG"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] BACKUP_JOBS=(${BACKUP_JOBS[*]})" >> "$GLOBAL_LOG"
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] MAX_JOBS=$MAX_JOBS" >> "$GLOBAL_LOG"
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] Command: $0 $cmd_args" >> "$GLOBAL_LOG"
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] --------------------------" >> "$GLOBAL_LOG"
 
     # Check that source directories have README files
-    IFS=';' read -ra jobs_array <<< "$BACKUP_JOBS"
-    for job in "${jobs_array[@]}"; do
+    for job in "${BACKUP_JOBS[@]}"; do
         IFS='|' read -r src dest <<< "$job"
         if [[ -d "$src" ]] && [[ ! -f "$src/README" ]]; then
             log_error "Source directory '$src' must contain a README file"
@@ -486,8 +488,7 @@ main() {
 
     # If depth not specified, calculate from source directory structure
     if [[ "$depth_specified" != "true" ]]; then
-        IFS=';' read -ra jobs_array <<< "$BACKUP_JOBS"
-        for job in "${jobs_array[@]}"; do
+        for job in "${BACKUP_JOBS[@]}"; do
             IFS='|' read -r src dest <<< "$job"
             if [[ -d "$src" ]]; then
                 local calculated_depth
@@ -510,8 +511,7 @@ main() {
     fi
 
     # Process each backup job
-    IFS=';' read -ra jobs_array <<< "$BACKUP_JOBS"
-    for job in "${jobs_array[@]}"; do
+    for job in "${BACKUP_JOBS[@]}"; do
         IFS='|' read -r src dest <<< "$job"
 
         if [[ ! -d "$src" ]]; then
