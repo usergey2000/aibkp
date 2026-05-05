@@ -45,6 +45,32 @@ get_host_cores() {
     fi
 }
 
+# Check if destination supports rsync -X option (extended attributes)
+# Returns "yes" if supported, "no" otherwise
+check_rsync_xattr_support() {
+    local dest_dir="$1"
+    local test_dir="${dest_dir}/.rsync_xattr_test_$$"
+    local result="no"
+
+    # Create test directory
+    if mkdir -p "$test_dir" 2>/dev/null; then
+        # Try to set an extended attribute
+        if setfattr -n user.test -v "test" "$test_dir" 2>/dev/null; then
+            # If setfattr succeeds, try rsync with -X
+            if rsync --help 2>&1 | grep -q "\-X, --xattrs"; then
+                # Test rsync with -X on this filesystem
+                if rsync -X --dry-run "$test_dir"/ "$test_dir"/backup 2>/dev/null; then
+                    result="yes"
+                fi
+            fi
+        fi
+        # Cleanup
+        rm -rf "$test_dir" 2>/dev/null || true
+    fi
+
+    echo "$result"
+}
+
 # Calculate minimum cores across all hosts in BACKUP_JOBS
 calculate_min_cores() {
     local min_cores
@@ -194,6 +220,7 @@ build_task_queue() {
     local dest_dir="$2"
     local depth="$3"
     local task_queue="$4"
+    local rsync_opts="$5"
 
     # Create a task directory with unique task files
     local task_dir="${task_queue}.tasks"
@@ -203,7 +230,7 @@ build_task_queue() {
     # Add source directory itself as a task (for files directly in source)
     # This ensures files in the root source folder are backed up
     local task_file="${task_dir}/task_$(printf '%06d' 0)"
-    echo "0|$src_dir|$dest_dir" > "$task_file"
+    echo "0|$src_dir|$dest_dir|$rsync_opts" > "$task_file"
     local task_id=1
 
     # Find all directories under src_dir up to the specified depth
@@ -221,7 +248,7 @@ build_task_queue() {
             local entry="$dir|$rel_depth|$dest_dir${dir#$src_dir}"
             IFS='|' read -r d rel_depth dest_path <<< "$entry"
             task_file="${task_dir}/task_$(printf '%06d' $task_id)"
-            echo "$rel_depth|$d|$dest_path" > "$task_file"
+            echo "$rel_depth|$d|$dest_path|$rsync_opts" > "$task_file"
             ((task_id++)) || true
         fi
     done < <(fd --type directory --min-depth 1 . "$src_dir")
@@ -241,8 +268,8 @@ process_task() {
     task=$(cat "$task_file")
     rm -f "$task_file"
 
-    local level src dest
-    IFS='|' read -r level src dest <<< "$task"
+    local level src dest rsync_opts
+    IFS='|' read -r level src dest rsync_opts <<< "$task"
 
     # Use worker_id based on task file number for consistent logging
     local worker_id="${task_file##*/}"
@@ -267,7 +294,7 @@ process_task() {
     fi
 
     # Run rsync
-    local rsync_cmd="rsync $RSYNC_OPTS"
+    local rsync_cmd="rsync $rsync_opts"
 
     # Handle the root task (level 0) specially - always recursive to include all files
     # For subdirectories: --dirs for shallower, -r for max depth
@@ -307,6 +334,7 @@ run_worker_pool() {
     local log_dir="$3"
     local dry_run="$4"
     local max_depth="$5"
+    local rsync_opts="$6"
 
     # Store running PIDs in an array
     local running_pids=()
@@ -439,6 +467,21 @@ Configuration (environment variables):
 EOF
 }
 
+# Build rsync options based on destination capabilities
+build_rsync_options() {
+    local dest="$1"
+    local opts="$RSYNC_OPTS"
+
+    # Check if destination supports -X (extended attributes)
+    local xattr_support
+    xattr_support=$(check_rsync_xattr_support "$dest")
+    if [[ "$xattr_support" == "yes" ]]; then
+        opts="$opts -X"
+    fi
+
+    echo "$opts"
+}
+
 # ==============================================================================
 # Main
 # ==============================================================================
@@ -548,17 +591,22 @@ main() {
 
         log_info "Processing: $src -> $dest"
 
+        # Build rsync options for this destination
+        local rsync_opts
+        rsync_opts=$(build_rsync_options "$dest")
+        log_info "Using rsync options: $rsync_opts"
+
         # Build task queue
         local task_queue
         task_queue=$(mktemp)
-        build_task_queue "$src" "$dest" "$depth" "$task_queue"
+        build_task_queue "$src" "$dest" "$depth" "$task_queue" "$rsync_opts"
 
         local task_count
         task_count=$(find "${task_queue}.tasks" -name "task_*" -type f 2>/dev/null | wc -l)
         log_info "Built task queue with $task_count tasks"
 
         # Run worker pool
-        run_worker_pool "$task_queue" "$jobs" "$LOG_DIR" "$dry_run" "$depth"
+        run_worker_pool "$task_queue" "$jobs" "$LOG_DIR" "$dry_run" "$depth" "$rsync_opts"
     done
 
     # Analyse logs for errors
