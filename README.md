@@ -39,10 +39,10 @@ Run with: `./create_test_data.sh`
 ./ai-backup.sh
 
 # With custom concurrency and depth
-./ai-backup.sh --jobs 8 --depth 3
+./ai-backup.sh --jobs 20 --depth 5
 
 # Dry run (no changes made)
-./ai-backup.sh --dry-run --jobs 4
+./ai-backup.sh --dry-run --jobs 20 --depth 5
 
 # Show help
 ./ai-backup.sh --help
@@ -53,11 +53,7 @@ Run with: `./create_test_data.sh`
 ```bash
 # Backup multiple source directories
 export BACKUP_JOBS=("/data|/backup/data" "/projects|/backup/projects")
-./ai-backup.sh --jobs 16
-
-# With custom rsync options
-export RSYNC_OPTS="-lptgoDzhHAx --delete -v --temp-dir=/tmp/rsync"
-./ai-backup.sh --depth 5
+./ai-backup.sh --jobs 20 --depth 5
 ```
 
 ## Requirements
