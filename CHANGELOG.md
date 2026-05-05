@@ -10,6 +10,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.1.0] - 2026-05-05
 
 ### Changed
+- **2026-05-05T15:18:00** - `7f0c923` - Update README.md examples to use --depth 5 --jobs 20
+  - Changed usage example to --jobs 20 --depth 5
+  - Changed examples section to use --jobs 20 --depth 5
+  - Remove rsync options example
+
+### Changed
+
+### Changed
 - **2026-05-05T15:12:10** - `5f5c52a` - Update README.md: BACKUP_JOBS array format and ADMIN_EMAIL
   - Changed `BACKUP_JOBS` description to reflect array format
   - Added `ADMIN_EMAIL` to configuration table
