@@ -25,7 +25,7 @@ if [[ ${#BACKUP_JOBS[@]} -eq 0 ]] 2>/dev/null; then
 fi
 
 # rsync flags
-RSYNC_OPTS="-lptgoDzhHAx --delete -v"
+RSYNC_OPTS="-lptgoDzhHAx --delete -v --numeric-ids"
 
 # Directory patterns to exclude (weekdays vs Saturday)
 WEEKDAY_FILTER="climlab_scratch"
