@@ -20,7 +20,8 @@ HOSTNAME="$(hostname -s)"
 # Remote format: server:path (rsync will use SSH for remote destinations)
 # Example: export BACKUP_JOBS=("./src|/dest" "server:/path|/local/dest")
 # To override: export BACKUP_JOBS=("./src|/dest" "server:/path|/local/dest")
-if [[ ${#BACKUP_JOBS[@]} -eq 0 ]] 2>/dev/null; then
+# Initialize array if not already set (check if first element is empty/undefined)
+if [[ -z "${BACKUP_JOBS[0]:-}" ]]; then
     BACKUP_JOBS=("./test_data|./test_backup/test_data" "./test_data|localhost:/nfs/ihfs/home_metis/serguei/aibkpcl/test_remote_backup/test_data")
 fi
 
@@ -52,21 +53,28 @@ check_rsync_xattr_support() {
     local test_dir="${dest_dir}/.rsync_xattr_test_$$"
     local result="no"
 
-    # Create test directory
-    if mkdir -p "$test_dir" 2>/dev/null; then
-        # Try to set an extended attribute
-        if setfattr -n user.test -v "test" "$test_dir" 2>/dev/null; then
-            # If setfattr succeeds, try rsync with -X
-            if rsync --help 2>&1 | grep -q "\-X, --xattrs"; then
-                # Test rsync with -X on this filesystem
-                if rsync -X --dry-run "$test_dir"/ "$test_dir"/backup 2>/dev/null; then
-                    result="yes"
-                fi
-            fi
-        fi
-        # Cleanup
-        rm -rf "$test_dir" 2>/dev/null || true
+    # Check if rsync supports -X first
+    if ! rsync --help 2>&1 | grep -q "\-X, --xattrs"; then
+        echo "$result"
+        return 0
     fi
+
+    # Create test directory
+    mkdir -p "$test_dir" 2>/dev/null || {
+        echo "$result"
+        return 0
+    }
+
+    # Try to set an extended attribute
+    if setfattr -n user.test -v "test" "$test_dir" 2>/dev/null; then
+        # Test rsync with -X on this filesystem
+        if rsync -X --dry-run "$test_dir"/ "$test_dir"/backup >/dev/null 2>&1; then
+            result="yes"
+        fi
+    fi
+
+    # Cleanup
+    rm -rf "$test_dir" 2>/dev/null || true
 
     echo "$result"
 }
