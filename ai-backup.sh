@@ -20,6 +20,12 @@ HOSTNAME="$(hostname -s)"
 # Remote format: server:path (rsync will use SSH for remote destinations)
 # Example: export BACKUP_JOBS=("./src|/dest" "server:/path|/local/dest")
 # To override: export BACKUP_JOBS=("./src|/dest" "server:/path|/local/dest")
+# Initialize at runtime for correct $PWD, but check if set here
+# Note: This runs at script load time, so $PWD is the current directory
+BACKUP_JOBS=("${BACKUP_JOBS[@]+"${BACKUP_JOBS[@]}"}")
+if [[ ${#BACKUP_JOBS[@]} -eq 0 ]]; then
+    BACKUP_JOBS=("./test_data|localhost:$PWD/test_remote_backup/test_data")
+fi
 
 # rsync flags
 RSYNC_OPTS="-lptgoDzhHAx --delete -v --numeric-ids"
@@ -493,12 +499,6 @@ build_rsync_options() {
 main() {
     # Check dependencies
     check_fd_dependencies
-
-    # Initialize default BACKUP_JOBS if not set (at runtime for correct $PWD)
-    # Use ${var+x} to check if variable is set (even if empty)
-    if [[ -z "${BACKUP_JOBS+x}" ]]; then
-        BACKUP_JOBS=("./test_data|localhost:$PWD/test_remote_backup/test_data")
-    fi
 
     local dry_run="false"
     local jobs="$MAX_JOBS"
