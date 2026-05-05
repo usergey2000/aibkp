@@ -12,7 +12,7 @@ set -euo pipefail
 # ==============================================================================
 # Configuration
 # ==============================================================================
-ADMIN_EMAIL="admin@metis.niu.edu"
+ADMIN_EMAIL="admin@example.com"
 DATE="$(date +%Y%m%d)"
 HOSTNAME="$(hostname -s)"
 # Source|destination pairs (array of "source;destination" strings)
