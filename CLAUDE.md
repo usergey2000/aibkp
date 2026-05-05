@@ -41,7 +41,7 @@ bash -n ai-pbkp-lstr.sh
 ## Configuration
 
 Key environment/script constants:
-- `BACKUP_JOBS` - Source|destination pairs (semicolon-separated; e.g., `./src|/dest;./src2|server:/path`)
+- `BACKUP_JOBS` - Array of "source|destination" pairs (e.g., `./src|/dest ./src2|server:/path`)
 - `RSYNC_OPTS` - rsync flags: `-lptgoDzhHAx --delete -v`
 - `WEEKDAY_FILTER` / `SATURDAY_FILTER` - Directory patterns to exclude based on day of week
 - `LOG_DIR` - Per-task logs: `./bkplog`
@@ -59,3 +59,7 @@ Key environment/script constants:
 
 - **Do not commit test folders** (test_data, test_backup, test_backup4, test_remote_backup) - these are generated dynamically
 - **Do not commit log folders** (bkplog) - these contain temporary backup logs
+
+## Development Rules
+
+- Document all notable changes and git commits in `CHANGELOG.md`
