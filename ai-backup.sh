@@ -289,15 +289,11 @@ process_task() {
     # Parse destination to detect remote format (server:path)
     # Remote format: remoteserver:path-to-remote-backup-folder
     if [[ "$dest" =~ ^[^:]+:.+ ]]; then
-        # Remote destination - create remote directory using ssh
+        # Remote destination - use rsync-path to create directory and run rsync
         local remote_host="${dest%%:*}"
         local remote_path="${dest#*:}"
-        # Check if remote host is reachable
-        if ! ping -c 1 -W 5 "$remote_host" >/dev/null 2>&1 && ! ssh -o ConnectTimeout=5 -o BatchMode=yes "$remote_host" exit >/dev/null 2>&1; then
-            log_error "Remote host '$remote_host' is not reachable"
-            return 1
-        fi
-        ssh "$remote_host" "mkdir -p '$remote_path'" 2>&1 | tee -a "$log_file"
+        local RSYNC_REMOTE_OPTS=("--rsync-path=\"mkdir -p '$remote_path' && rsync\"")
+        rsync_opts="$rsync_opts ${RSYNC_REMOTE_OPTS[@]}"
     else
         # Local destination - create directory
         mkdir -p "$dest"
