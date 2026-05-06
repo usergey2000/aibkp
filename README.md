@@ -27,7 +27,7 @@ Run with: `./create_test_data.sh`
 
 | Environment Variable | Description |
 |---------------------|-------------|
-| `BACKUP_JOBS` | Array of "source|destination" pairs |
+| `BACKUP_JOBS` | Array of "source|destination" pairs (use inline assignment: `BACKUP_JOBS=() ./ai-backup.sh`) |
 | `ADMIN_EMAIL` | Admin notification email (default: `admin@example.com`) |
 | `RSYNC_OPTS` | rsync flags (default: `-lptgoDzhHAx --delete -v`) |
 | `LOG_DIR` | Per-task logs directory (default: `./bkplog`) |
@@ -51,9 +51,8 @@ Run with: `./create_test_data.sh`
 ## Examples
 
 ```bash
-# Backup multiple source directories
-export BACKUP_JOBS=("/data|/backup/data" "/projects|/backup/projects")
-./ai-backup.sh --jobs 20 --depth 5
+# Backup multiple source directories (note: use inline assignment, not export)
+BACKUP_JOBS=("/data|/backup/data" "/projects|/backup/projects") ./ai-backup.sh --jobs 20 --depth 5
 ```
 
 ## Requirements

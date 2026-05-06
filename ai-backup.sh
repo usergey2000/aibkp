@@ -18,11 +18,14 @@ HOSTNAME="$(hostname -s)"
 # Source|destination pairs (array of "source;destination" strings)
 # Default: local backup and remote backup to localhost
 # Remote format: server:path (rsync will use SSH for remote destinations)
-# Example: export BACKUP_JOBS=("./src|/dest" "server:/path|/local/dest")
-# To override: export BACKUP_JOBS=("./src|/dest" "server:/path|/local/dest")
-# Initialize at runtime for correct $PWD, but check if set here
-# Note: This runs at script load time, so $PWD is the current directory
+# Example: BACKUP_JOBS=("./src|/dest" "server:/path|/local/dest") ./ai-backup.sh
+# Or use a wrapper script that sets the array before sourcing
+# Note: Array cannot be exported from shell environment, so use string fallback
 BACKUP_JOBS=("${BACKUP_JOBS[@]+"${BACKUP_JOBS[@]}"}")
+if [[ ${#BACKUP_JOBS[@]} -eq 0 ]] && [[ -n "${BACKUP_JOBS:-}" ]]; then
+    # BACKUP_JOBS is a string (from export), parse it
+    IFS=';' read -ra BACKUP_JOBS <<< "${BACKUP_JOBS:-}"
+fi
 if [[ ${#BACKUP_JOBS[@]} -eq 0 ]]; then
     BACKUP_JOBS=("./test_data|localhost:$PWD/test_remote_backup/test_data")
 fi
