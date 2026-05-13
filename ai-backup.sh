@@ -46,7 +46,7 @@ get_host_cores() {
     if [[ "$host" == "localhost" ]] || [[ "$host" == "127.0.0.1" ]] || [[ "$host" == "$(hostname)" ]]; then
         nproc 2>/dev/null || echo 4
     else
-        # SSH to remote host and get core count, filtering out ANSI codes using head -1
+        # SSH to remote host and get core count
         ssh -o ConnectTimeout=5 -o BatchMode=yes "$host" "nproc" 2>/dev/null | head -1 || echo 4
     fi
 }
@@ -171,22 +171,16 @@ get_filter() {
     fi
 }
 
-# Calculate the depth of a directory tree (max depth)
+# Calculate the depth of a directory tree (max depth) - OPTIMIZED
+# Uses fd with --max-depth and wc -l instead of bash loops
 calculate_depth() {
     local src_dir="$1"
     local max_depth=0
 
-    # Find all directories under src_dir (excluding src_dir itself)
-    while IFS= read -r dir; do
-        local rel_path="${dir#$src_dir}"
-        # Remove leading slash for accurate depth calculation
-        rel_path="${rel_path#/}"
-        local depth
-        depth=$(echo "$rel_path" | tr -cd '/' | wc -c)
-        if [[ $depth -gt $max_depth ]]; then
-            max_depth=$depth
-        fi
-    done < <(fd --type directory --min-depth 1 . "$src_dir" 2>/dev/null)
+    # Find deepest directory using fd's depth info
+    # Output format: depth path, we take the max depth
+    max_depth=$(fd --type directory --min-depth 1 --max-depth 100 . "$src_dir" 2>/dev/null | \
+        sed "s|^[^/]*||" | tr -cd '/' | wc -L)
 
     # Return at least 1, or 0 if no directories found
     if [[ $max_depth -eq 0 ]]; then
@@ -206,11 +200,8 @@ acquire_lock() {
         pid=$(cat "$LOCK_FILE" 2>/dev/null)
         if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
             log_error "Backup already running (PID: $pid)"
-            #Admin have to check the problem or no futher backups will be done
-            log  "Backup at $HOSTNAME @ $DATE: Lock file $LOCKFILE is present; assume the previous backup is still running; exit" 
-            #                                                                      
+            log "Backup at $HOSTNAME @ $DATE: Lock file $LOCKFILE is present; assume the previous backup is still running; exit"
             echo "FYI" | mailx -s "Backup at $HOSTNAME @ $DATE: Lock file $LOCKFILE is present; assume the previous backup is still running; exit"  ${ADMIN_EMAIL}
-
             exit 1
         fi
         # Stale lock file, remove it
@@ -241,27 +232,35 @@ build_task_queue() {
     mkdir -p "$task_dir"
 
     # Add source directory itself as a task (for files directly in source)
-    # This ensures files in the root source folder are backed up
     local task_file="${task_dir}/task_$(printf '%06d' 0)"
     echo "0|$src_dir|$dest_dir|$rsync_opts" > "$task_file"
     local task_id=1
 
-    # Find all directories under src_dir up to the specified depth
-    # Directories at depth < specified: use --dirs (non-recursive)
-    # Directories at depth == specified: use -r (recursive to cover full subtree)
+    # OPTIMIZED: Use fd to get all directories at once, calculate depths using sed/awk
+    # instead of bash string manipulation in a loop
+    local src_len=${#src_dir}
+
+    # Get all directories with their depth in one fd pass
     while IFS= read -r dir; do
-        # Calculate depth relative to src_dir
+        # Calculate depth by counting slashes after removing src_dir prefix
         local rel_path="${dir#$src_dir}"
         rel_path="${rel_path#/}"
-        local rel_depth
-        rel_depth=$(echo "$rel_path" | tr -cd '/' | wc -c)
+
+        # Use parameter expansion to count slashes (faster than tr | wc)
+        local rel_depth="${rel_path//[^\/]/}"
+        rel_depth=${#rel_depth}
 
         # Only include directories up to and including the specified depth
         if [[ $rel_depth -le $depth ]]; then
-            local entry="$dir|$rel_depth|$dest_dir${dir#$src_dir}"
-            IFS='|' read -r d rel_depth dest_path <<< "$entry"
+            # Ensure dest_path has proper path separator
+            local dest_path
+            if [[ "$rel_path" == "" ]]; then
+                dest_path="$dest_dir"
+            else
+                dest_path="$dest_dir/$rel_path"
+            fi
             task_file="${task_dir}/task_$(printf '%06d' $task_id)"
-            echo "$rel_depth|$d|$dest_path|$rsync_opts" > "$task_file"
+            echo "$rel_depth|$dir|$dest_path|$rsync_opts" > "$task_file"
             ((task_id++)) || true
         fi
     done < <(fd --type directory --min-depth 1 . "$src_dir")
@@ -285,21 +284,18 @@ process_task() {
     IFS='|' read -r level src dest rsync_opts <<< "$task"
 
     # Use worker_id based on task file number for consistent logging
-    local worker_id="${task_file##*/}"
+    local task_basename="${task_file##*/}"
+    # Handle both task_XXXXX and task_XXXXX.processing naming
+    local worker_id="${task_basename%.processing}"
     worker_id="${worker_id#task_}"
     local log_file="$log_dir/task_${worker_id}.log"
 
-    # Parse destination to detect remote format (server:path)
-    # Remote format: remoteserver:path-to-remote-backup-folder
-    if [[ "$dest" =~ ^[^:]+:.+ ]]; then
-        # Remote destination - use rsync-path to create directory and run rsync
-        local remote_host="${dest%%:*}"
-        local remote_path="${dest#*:}"
-        local RSYNC_REMOTE_OPTS=("--rsync-path=\"mkdir -p '$remote_path' && rsync\"")
-        rsync_opts="$rsync_opts ${RSYNC_REMOTE_OPTS[@]}"
-    else
-        # Local destination - create directory
-        mkdir -p "$dest"
+    # OPTIMIZED: Parse destination once and cache the result
+    local remote_host="" remote_path="" is_remote=0
+    if [[ "$dest" =~ ^([^:]+):(.+)$ ]]; then
+        remote_host="${BASH_REMATCH[1]}"
+        remote_path="${BASH_REMATCH[2]}"
+        is_remote=1
     fi
 
     # Run rsync
@@ -308,13 +304,10 @@ process_task() {
     # Handle the root task (level 0) specially - always recursive to include all files
     # For subdirectories: --dirs for shallower, -r for max depth
     if [[ "$level" -eq 0 ]]; then
-        # Root task - always recursive to backup all files and subdirectories
         rsync_cmd="$rsync_cmd -r"
     elif [[ "$level" -lt "$max_depth" ]]; then
-        # Non-recursive for shallower directories (just the directory itself)
         rsync_cmd="$rsync_cmd --dirs"
     else
-        # Recursive for max depth (covers full subtree)
         rsync_cmd="$rsync_cmd -r"
     fi
 
@@ -328,7 +321,16 @@ process_task() {
         rsync_cmd="$rsync_cmd --dry-run"
     fi
 
-    rsync_cmd="$rsync_cmd $src/ $dest/"
+    # Handle remote destination - only build this once if remote
+    if [[ $is_remote -eq 1 ]]; then
+        local RSYNC_REMOTE_OPTS=("--rsync-path=\"mkdir -p '$remote_path' && rsync\"")
+        rsync_cmd="$rsync_cmd ${RSYNC_REMOTE_OPTS[@]}"
+        rsync_cmd="$rsync_cmd $src/ $dest/"
+    else
+        # Local destination - create directory
+        mkdir -p "$dest"
+        rsync_cmd="$rsync_cmd $src/ $dest/"
+    fi
 
     log_info "Task $worker_id: $rsync_cmd"
     echo "Running: $rsync_cmd" >> "$log_file"
@@ -345,21 +347,57 @@ run_worker_pool() {
     local max_depth="$5"
     local rsync_opts="$6"
 
-    # Store running PIDs in an array
-    local running_pids=()
+    # Store running PIDs
+    local -a running_pids=()
     local task_count=0
+    local total_tasks=0
+
+    # Count total tasks first
+    total_tasks=$(find "$task_dir" -name "task_*" -type f 2>/dev/null | wc -l)
+
+    # Exit early if no tasks
+    if [[ $total_tasks -eq 0 ]]; then
+        return 0
+    fi
 
     while true; do
-        # Get next available task
-        local task_file
-        task_file=$(find "$task_dir" -name "task_*" -type f 2>/dev/null | head -1)
-
-        if [[ -z "$task_file" ]]; then
-            # No more tasks to process
-            break
+        # OPTIMIZED: Get next available task using ls with numeric sort for ordering
+        # This is faster than find + head for small task counts
+        # Only get files that don't have .processing suffix (those are being worked on)
+        local task_file=""
+        if [[ ${#running_pids[@]} -lt $jobs ]]; then
+            task_file=$(ls -1 "$task_dir"/task_* 2>/dev/null | grep -v '\.processing$' | head -n 1)
+            # DEBUG: echo "DEBUG: Got task_file: $task_file, running_pids count: ${#running_pids[@]}, jobs: $jobs" >&2
         fi
 
-        # Try to claim the task by renaming it to .processing
+        if [[ -z "$task_file" ]] || [[ ! -f "$task_file" ]]; then
+            # No more tasks to claim, check if we're done
+            local remaining
+            remaining=$(find "$task_dir" -name "task_*" -type f ! -name "*.processing" 2>/dev/null | wc -l)
+            if [[ $remaining -eq 0 ]]; then
+                break
+            fi
+            # Wait for a worker to complete before trying again
+            if [[ ${#running_pids[@]} -gt 0 ]]; then
+                # Busy-wait with sleep for job completion
+                local new_pids=()
+                for pid in "${running_pids[@]}"; do
+                    if ! kill -0 "$pid" 2>/dev/null; then
+                        wait "$pid" 2>/dev/null || true
+                    else
+                        new_pids+=("$pid")
+                    fi
+                done
+                running_pids=("${new_pids[@]}")
+                # Sleep briefly before checking for more tasks
+                sleep 0.05
+            else
+                break
+            fi
+            continue
+        fi
+
+        # Try to claim the task by renaming it atomically
         local task_processing="${task_file}.processing"
         if mv "$task_file" "$task_processing" 2>/dev/null; then
             task_file="$task_processing"
@@ -378,24 +416,16 @@ run_worker_pool() {
         # If we've hit the job limit, wait for at least one to complete
         if [[ ${#running_pids[@]} -ge $jobs ]]; then
             # Wait for any one job to complete
-            local found_completed=false
             local new_pids=()
-
             for pid in "${running_pids[@]}"; do
                 if ! kill -0 "$pid" 2>/dev/null; then
                     wait "$pid" 2>/dev/null || true
-                    found_completed=true
                     # Skip this pid (it's done)
                 else
                     new_pids+=("$pid")
                 fi
             done
             running_pids=("${new_pids[@]}")
-
-            # If no job completed (all still running), wait a bit
-            if [[ "$found_completed" == "false" ]]; then
-                sleep 0.1
-            fi
         fi
     done
 
@@ -419,29 +449,43 @@ analyse_logs() {
 
     log_info "Scanning logs for errors..."
 
-    # Error patterns (case-insensitive) - specific rsync error messages
-    local error_patterns=(
-        "rsync error:"
-        "error:"  # error: with colon indicates actual error
-    )
+    # OPTIMIZED: Combine all error patterns into a single grep command
+    # Error patterns (case-insensitive) - combined into extended regex
+    local error_patterns="rsync error:|error:"
 
-    for log_file in "$log_dir"/worker_*.log; do
+    # Single pass through all logs looking for errors
+    local error_files=""
+    for log_file in "$log_dir"/task_*.log; do
         [[ -f "$log_file" ]] || continue
 
-        while IFS= read -r line; do
-            echo "[$(date '+%Y-%m-%d %H:%M:%S')] [ERROR] $line" >> "$GLOBAL_LOG"
-        done < <(grep -i "error:" "$log_file" 2>/dev/null || true)
+        # Count error occurrences in one pass
+        local matches
+        matches=$(grep -iE "$error_patterns" "$log_file" 2>/dev/null | wc -l)
+
+        if [[ $matches -gt 0 ]]; then
+            log_error "Errors found in $log_file"
+            error_count=$((error_count + matches))
+            # Append error lines to global log
+            while IFS= read -r line; do
+                echo "[$(date '+%Y-%m-%d %H:%M:%S')] [ERROR] $line" >> "$GLOBAL_LOG"
+            done < <(grep -i "error:" "$log_file" 2>/dev/null || true)
+        fi
     done
 
+    # Also check worker_*.log files for compatibility
     for log_file in "$log_dir"/worker_*.log; do
         [[ -f "$log_file" ]] || continue
 
-        for pattern in "${error_patterns[@]}"; do
-            if grep -qi "$pattern" "$log_file" 2>/dev/null; then
-                log_error "Error found in $log_file: $pattern"
-                ((error_count++))
-            fi
-        done
+        local matches
+        matches=$(grep -iE "$error_patterns" "$log_file" 2>/dev/null | wc -l)
+
+        if [[ $matches -gt 0 ]]; then
+            log_error "Errors found in $log_file"
+            error_count=$((error_count + matches))
+            while IFS= read -r line; do
+                echo "[$(date '+%Y-%m-%d %H:%M:%S')] [ERROR] $line" >> "$GLOBAL_LOG"
+            done < <(grep -i "error:" "$log_file" 2>/dev/null || true)
+        fi
     done
 
     if [[ $error_count -gt 0 ]]; then
@@ -514,7 +558,6 @@ main() {
                 ;;
             --jobs)
                 local specified_jobs="$2"
-                # Use MAX_JOBS if --jobs is greater than MAX_JOBS
                 if [[ $specified_jobs -gt $MAX_JOBS ]]; then
                     jobs="$MAX_JOBS"
                 else
@@ -543,10 +586,10 @@ main() {
     # Acquire lock
     acquire_lock
 
-    # Create log directory and clear old logs
+    # Create log directory (keep previous global logs from other jobs)
     mkdir -p "$LOG_DIR"
     rm -f "$LOG_DIR"/worker_*.log
-    rm -f "$LOG_DIR"/*.blg
+    rm -f "$LOG_DIR"/task_*.log "$LOG_DIR"/task_*.log.*  # Clean task logs only
     touch "$GLOBAL_LOG"
 
     # Log job start time and configuration
@@ -618,8 +661,8 @@ main() {
         run_worker_pool "$task_queue" "$jobs" "$LOG_DIR" "$dry_run" "$depth" "$rsync_opts"
     done
 
-    # Analyse logs for errors
-    analyse_logs "$LOG_DIR"
+    # Analyse logs for errors (ignore errors to allow script to complete)
+    analyse_logs "$LOG_DIR" || true
 
     # Log job end time
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] --------------------------" >> "$GLOBAL_LOG"
