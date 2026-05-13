@@ -261,6 +261,7 @@ build_task_queue() {
             fi
             task_file="${task_dir}/task_$(printf '%06d' $task_id)"
             echo "$rel_depth|$dir|$dest_path|$rsync_opts" > "$task_file"
+            echo  task=$task_id, rel_depth=$rel_depth: rsync $rsync_opts $dir $dest_path    >> "$GLOBAL_LOG"
             ((task_id++)) || true
         fi
     done < <(fd --hidden --type directory --min-depth 1 . "$src_dir")
