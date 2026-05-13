@@ -664,13 +664,14 @@ main() {
         rm -rf "$task_queue" 2>/dev/null || true
 
         # Clean up any temporary files in destination
+        # Rsync may create temporary files like .FILENAME.XXXXXX during transfers
         if [[ "$dest" =~ ^([^:]+): ]]; then
             # Remote destination - cleanup via SSH
             local remote_dest_path="${dest#*:}"
-            ssh -o BatchMode=yes "${dest%%:*}" "rm -rf '$remote_dest_path'/.rsync_* 2>/dev/null || true" 2>/dev/null || true
+            ssh -o BatchMode=yes "${dest%%:*}" "find '$remote_dest_path' -name '.*' -type f -delete 2>/dev/null || true" 2>/dev/null || true
         else
             # Local destination - direct cleanup
-            rm -rf "${dest}"/.rsync_* 2>/dev/null || true
+            find "${dest}" -name '.*' -type f -delete 2>/dev/null || true
         fi
     done
 
