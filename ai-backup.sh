@@ -263,7 +263,7 @@ build_task_queue() {
             echo "$rel_depth|$dir|$dest_path|$rsync_opts" > "$task_file"
             ((task_id++)) || true
         fi
-    done < <(fd --type directory --min-depth 1 . "$src_dir")
+    done < <(fd --hidden --type directory --min-depth 1 . "$src_dir")
 }
 
 # ==============================================================================
@@ -301,12 +301,13 @@ process_task() {
     # Run rsync
     local rsync_cmd="rsync $rsync_opts"
 
-    # Handle the root task (level 0) specially - always recursive to include all files
-    # For subdirectories: --dirs for shallower, -r for max depth
+    # Handle the root task (level 0) specially - non-recursive using --dirs
+    # This backs up files and immediate subdirectories of the source folder (depth 1 only)
+    # For subdirectories: -r for shallower (to include full subtree), -r for max depth
     if [[ "$level" -eq 0 ]]; then
-        rsync_cmd="$rsync_cmd -r"
-    elif [[ "$level" -lt "$max_depth" ]]; then
         rsync_cmd="$rsync_cmd --dirs"
+    elif [[ "$level" -lt "$max_depth" ]]; then
+        rsync_cmd="$rsync_cmd -r"
     else
         rsync_cmd="$rsync_cmd -r"
     fi

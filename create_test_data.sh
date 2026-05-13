@@ -1,6 +1,6 @@
 #!/bin/bash
 # Create test folder structure with 10 subfolders of random depth (1-10)
-# Each level has 1-20 files
+# Each level has 1-20 files including both visible and hidden folders
 
 TEST_DIR="/nfs/ihfs/home_metis/serguei/aibkpcl/test_data"
 
@@ -34,13 +34,22 @@ create_subdirs() {
         return
     fi
 
-    # Create 1-3 subdirectories
-    local num_subdirs=$((RANDOM % 3 + 1))
+    # Create 1-2 visible subdirectories
+    local num_subdirs=$((RANDOM % 2 + 1))
     for ((i = 1; i <= num_subdirs; i++)); do
         local subdir="${base_dir}/subdir_${i}_d${current_depth}"
         mkdir -p "$subdir"
         create_subdirs "$subdir" $((current_depth + 1)) "$max_depth"
     done
+
+    # Create 1 hidden subdirectory (50% chance)
+    if [[ $((RANDOM % 2)) -eq 0 ]]; then
+        local hidden_subdir="${base_dir}/.hidden_d${current_depth}"
+        mkdir -p "$hidden_subdir"
+        create_files "$hidden_subdir"
+        # Continue recursion into hidden directory
+        create_subdirs "$hidden_subdir" $((current_depth + 1)) "$max_depth"
+    fi
 }
 
 # Create 10 subfolders with random depths (1-10)
@@ -63,3 +72,6 @@ echo ""
 echo "Test data created in $TEST_DIR"
 echo "Structure:"
 find "$TEST_DIR" -type d -name "folder_*" | head -20
+echo ""
+echo "Hidden folders:"
+find "$TEST_DIR" -type d -name ".*" | head -20

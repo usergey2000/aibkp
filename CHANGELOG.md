@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **2026-05-13** - Task for source folder (level 0) uses non-recursive `--dirs` instead of `-r`
+  - Source folder task only backs up files and immediate subdirectories at depth 1
+  - Intermediate tasks use `-r` to backup full subtree recursively
+
+### Added
+- **2026-05-13** - Add `--hidden` flag to fd in `build_task_queue()` to include hidden directories
+  - Test data generator now creates both visible and hidden folders
+
+### Fixed
+- **2026-05-13** - Task cleanup: Add removal of `.processing` files and empty task directories in `run_worker_pool()` and `main()`
+- **2026-05-13** - Preserve global logs: Only clean task subdirectories, not the entire log directory
+
 ## [0.1.0] - 2026-05-05
 
 ### Changed
