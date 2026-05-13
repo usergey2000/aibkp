@@ -200,8 +200,8 @@ acquire_lock() {
         pid=$(cat "$LOCK_FILE" 2>/dev/null)
         if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
             log_error "Backup already running (PID: $pid)"
-            log "Backup at $HOSTNAME @ $DATE: Lock file $LOCKFILE is present; assume the previous backup is still running; exit"
-            echo "FYI" | mailx -s "Backup at $HOSTNAME @ $DATE: Lock file $LOCKFILE is present; assume the previous backup is still running; exit"  ${ADMIN_EMAIL}
+            log "Backup at $HOSTNAME @ $DATE: Lock file $LOCK_FILE is present; assume the previous backup is still running; exit"
+            echo "FYI" | mailx -s "Backup at $HOSTNAME @ $DATE: Lock file $LOCK_FILE is present; assume the previous backup is still running; exit"  ${ADMIN_EMAIL}
             exit 1
         fi
         # Stale lock file, remove it
@@ -223,11 +223,10 @@ build_task_queue() {
     local src_dir="$1"
     local dest_dir="$2"
     local depth="$3"
-    local task_queue="$4"
+    local task_dir="$4"
     local rsync_opts="$5"
 
     # Create a task directory with unique task files
-    local task_dir="${task_queue}.tasks"
     rm -rf "$task_dir"
     mkdir -p "$task_dir"
 
@@ -341,8 +340,7 @@ process_task() {
 }
 
 run_worker_pool() {
-    local task_queue="$1"
-    local task_dir="${task_queue}.tasks"
+    local task_dir="$1"
     local jobs="$2"
     local log_dir="$3"
     local dry_run="$4"
@@ -362,14 +360,14 @@ run_worker_pool() {
         return 0
     fi
 
+
     while true; do
         # OPTIMIZED: Get next available task using ls with numeric sort for ordering
         # This is faster than find + head for small task counts
         # Only get files that don't have .processing suffix (those are being worked on)
-        local task_file=""
+        task_file=""
         if [[ ${#running_pids[@]} -lt $jobs ]]; then
-            task_file=$(ls -1 "$task_dir"/task_* 2>/dev/null | grep -v '\.processing$' | head -n 1)
-            # DEBUG: echo "DEBUG: Got task_file: $task_file, running_pids count: ${#running_pids[@]}, jobs: $jobs" >&2
+            task_file=$(ls -1 "$task_dir"/task_* 2>/dev/null | grep -v '\.processing$' | head -n 1) || true
         fi
 
         if [[ -z "$task_file" ]] || [[ ! -f "$task_file" ]]; then
@@ -652,18 +650,18 @@ main() {
 
         # Build task queue
         local task_queue
-        task_queue=$(mktemp)
+        task_queue=$(mktemp -d)
         build_task_queue "$src" "$dest" "$depth" "$task_queue" "$rsync_opts"
 
         local task_count
-        task_count=$(find "${task_queue}.tasks" -name "task_*" -type f 2>/dev/null | wc -l)
+        task_count=$(find "$task_queue" -name "task_*" -type f 2>/dev/null | wc -l)
         log_info "Built task queue with $task_count tasks"
 
         # Run worker pool
         run_worker_pool "$task_queue" "$jobs" "$LOG_DIR" "$dry_run" "$depth" "$rsync_opts"
 
         # Clean up task queue directory
-        rm -rf "${task_queue}.tasks" 2>/dev/null || true
+        rm -rf "$task_queue" 2>/dev/null || true
     done
 
     # Clean up any leftover .tasks directories from failed runs
