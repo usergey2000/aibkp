@@ -15,10 +15,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **2026-05-13** - Add `--hidden` flag to fd in `build_task_queue()` to include hidden directories
   - Test data generator now creates both visible and hidden folders
+- **2026-05-13** - Add ai-backup-home.sh wrapper script for /home/serguei backup
 
 ### Fixed
 - **2026-05-13** - Task cleanup: Add removal of `.processing` files and empty task directories in `run_worker_pool()` and `main()`
 - **2026-05-13** - Preserve global logs: Only clean task subdirectories, not the entire log directory
+- **2026-05-13** - Fix task queue path mismatch: use task_dir directly instead of task_queue.tasks suffix
+- **2026-05-13** - Fix worker pool not processing tasks: use mktemp -d for directory creation
+- **2026-05-13** - Fix set -euo pipefail issues by removing 'local' from task_file in while loop
+- **2026-05-13** - Fix LOCKFILE unbound variable: change to LOCK_FILE
 
 ## [0.1.0] - 2026-05-05
 
