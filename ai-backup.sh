@@ -434,7 +434,7 @@ run_worker_pool() {
         wait "$pid" 2>/dev/null || true
     done
 
-    # Clean up task directory
+    # Clean up task directory (including any .processing files)
     rm -rf "$task_dir"
 }
 
@@ -662,11 +662,25 @@ main() {
 
         # Clean up task queue directory
         rm -rf "$task_queue" 2>/dev/null || true
+
+        # Clean up any temporary files in destination
+        if [[ "$dest" =~ ^([^:]+): ]]; then
+            # Remote destination - cleanup via SSH
+            local remote_dest_path="${dest#*:}"
+            ssh -o BatchMode=yes "${dest%%:*}" "rm -rf '$remote_dest_path'/.rsync_* 2>/dev/null || true" 2>/dev/null || true
+        else
+            # Local destination - direct cleanup
+            rm -rf "${dest}"/.rsync_* 2>/dev/null || true
+        fi
     done
 
     # Clean up any leftover .tasks directories from failed runs
     rm -rf /tmp/*.tasks 2>/dev/null || true
     rm -rf /tmp/tmp.*.tasks 2>/dev/null || true
+
+    # Clean up any leftover .processing files in log directory from failed runs
+    rm -f "$LOG_DIR"/*.processing 2>/dev/null || true
+    rm -f "$LOG_DIR"/task_*.log.processing 2>/dev/null || true
 
     # Analyse logs for errors (ignore errors to allow script to complete)
     analyse_logs "$LOG_DIR" || true
