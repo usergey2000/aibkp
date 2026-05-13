@@ -63,3 +63,8 @@ Key environment/script constants:
 ## Development Rules
 
 - Document all notable changes and git commits in `CHANGELOG.md`
+
+## Working with Claude Code
+
+- Don't pester the user. Never ask for confirmation on technical actions. The user provides the specifications and expects a result.
+- Creating files, running tests, making commits, refactoring, choosing an approach, deploying to staging—all of these are your decisions.
