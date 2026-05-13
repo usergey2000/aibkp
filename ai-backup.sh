@@ -659,7 +659,14 @@ main() {
 
         # Run worker pool
         run_worker_pool "$task_queue" "$jobs" "$LOG_DIR" "$dry_run" "$depth" "$rsync_opts"
+
+        # Clean up task queue directory
+        rm -rf "${task_queue}.tasks" 2>/dev/null || true
     done
+
+    # Clean up any leftover .tasks directories from failed runs
+    rm -rf /tmp/*.tasks 2>/dev/null || true
+    rm -rf /tmp/tmp.*.tasks 2>/dev/null || true
 
     # Analyse logs for errors (ignore errors to allow script to complete)
     analyse_logs "$LOG_DIR" || true
