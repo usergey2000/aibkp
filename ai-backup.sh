@@ -324,8 +324,10 @@ process_task() {
 
     # Handle remote destination - only build this once if remote
     if [[ $is_remote -eq 1 ]]; then
-        local RSYNC_REMOTE_OPTS=("--rsync-path=\"mkdir -p '$remote_path' && rsync\"")
-        rsync_cmd="$rsync_cmd ${RSYNC_REMOTE_OPTS[@]}"
+        # Escape path for shell execution on remote host
+        local escaped_remote_path
+        escaped_remote_path=$(printf '%q' "$remote_path")
+        rsync_cmd="$rsync_cmd --rsync-path=\"mkdir -p $escaped_remote_path && rsync\""
         rsync_cmd="$rsync_cmd \"$src/\" \"$dest/\""
     else
         # Local destination - create directory
