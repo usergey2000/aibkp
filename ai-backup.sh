@@ -326,11 +326,11 @@ process_task() {
     if [[ $is_remote -eq 1 ]]; then
         local RSYNC_REMOTE_OPTS=("--rsync-path=\"mkdir -p '$remote_path' && rsync\"")
         rsync_cmd="$rsync_cmd ${RSYNC_REMOTE_OPTS[@]}"
-        rsync_cmd="$rsync_cmd $src/ $dest/"
+        rsync_cmd="$rsync_cmd \"$src/\" \"$dest/\""
     else
         # Local destination - create directory
         mkdir -p "$dest"
-        rsync_cmd="$rsync_cmd $src/ $dest/"
+        rsync_cmd="$rsync_cmd \"$src/\" \"$dest/\""
     fi
 
     log_info "Task $worker_id: $rsync_cmd"

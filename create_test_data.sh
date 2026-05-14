@@ -11,22 +11,13 @@ mkdir -p "$TEST_DIR"
 # Create README file in test_data root
 echo "Test data directory - backup source" > "${TEST_DIR}/README"
 
-# Function to create random files in a directory
-create_files() {
-    local dir="$1"
-    local num_files=$((RANDOM % 20 + 1))
-    for ((i = 1; i <= num_files; i++)); do
-        echo "File $i in $dir" > "$dir/file_$i.txt"
-    done
-}
-
 # Function to recursively create directories up to max depth
 create_subdirs() {
     local base_dir="$1"
     local current_depth="$2"
     local max_depth="$3"
 
-    # Create 1-20 files at this level
+    # Create files at this level
     create_files "$base_dir"
 
     # If we've reached max depth, stop
@@ -34,10 +25,15 @@ create_subdirs() {
         return
     fi
 
-    # Create 1-2 visible subdirectories
+    # Create 1-2 visible subdirectories (some with spaces in names)
     local num_subdirs=$((RANDOM % 2 + 1))
     for ((i = 1; i <= num_subdirs; i++)); do
-        local subdir="${base_dir}/subdir_${i}_d${current_depth}"
+        if [[ $((RANDOM % 3)) -eq 0 ]]; then
+            # 1/3 chance of having spaces in directory name
+            local subdir="${base_dir}/subdir with space ${i}_d${current_depth}"
+        else
+            local subdir="${base_dir}/subdir_${i}_d${current_depth}"
+        fi
         mkdir -p "$subdir"
         create_subdirs "$subdir" $((current_depth + 1)) "$max_depth"
     done
@@ -49,6 +45,24 @@ create_subdirs() {
         create_files "$hidden_subdir"
         # Continue recursion into hidden directory
         create_subdirs "$hidden_subdir" $((current_depth + 1)) "$max_depth"
+    fi
+}
+
+# Function to create random files in a directory
+# Some files have spaces in names to test path handling
+create_files() {
+    local dir="$1"
+    local num_files=$((RANDOM % 20 + 1))
+    for ((i = 1; i <= num_files; i++)); do
+        echo "File $i in $dir" > "$dir/file_$i.txt"
+    done
+
+    # Create 1-2 files with spaces in names (50% chance)
+    if [[ $((RANDOM % 2)) -eq 0 ]]; then
+        local num_space_files=$((RANDOM % 2 + 1))
+        for ((i = 1; i <= num_space_files; i++)); do
+            echo "File with space $i in $dir" > "$dir/file with space $i.txt"
+        done
     fi
 }
 
