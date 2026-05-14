@@ -64,6 +64,11 @@ Key environment/script constants:
 
 - Document all notable changes and git commits in `CHANGELOG.md`
 
+## Testing
+
+- For test runs, create a copy of `ai-backup.sh` and redefine `BACKUP_JOBS` directly in the code
+- Do not pass `BACKUP_JOBS` as a command-line parameter or environment variable - this can cause shell parsing issues with paths containing spaces
+
 ## Working with Claude Code
 
 - Don't pester the user. Never ask for confirmation on technical actions. The user provides the specifications and expects a result.
