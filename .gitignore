@@ -1,0 +1,19 @@
+# Test scripts
+ai-backup-test.sh
+ai-backup-home.sh
+
+# Generated during backup runs
+bkplog/
+test_data/
+test_remote_backup/
+
+# Temporary files
+*.tmp
+*.bak
+*~
+
+# Lock file
+/tmp/.running_backup_*
+
+# Task directories
+*.tasks
