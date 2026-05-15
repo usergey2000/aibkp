@@ -27,11 +27,12 @@ if [[ ${#BACKUP_JOBS[@]} -eq 0 ]] && [[ -n "${BACKUP_JOBS:-}" ]]; then
     IFS=';' read -ra BACKUP_JOBS <<< "${BACKUP_JOBS:-}"
 fi
 if [[ ${#BACKUP_JOBS[@]} -eq 0 ]]; then
-    BACKUP_JOBS=("./test_data|localhost:$PWD/test_remote_backup/test_data")
+    #BACKUP_JOBS=("./test_data|localhost:$PWD/test_remote_backup/test_data")
+    BACKUP_JOBS=("./test_data|$PWD/test_remote_backup/test_data")
 fi
 
 # rsync flags
-RSYNC_OPTS="-lptgoDzhHAx --delete -v --numeric-ids"
+RSYNC_OPTS="-lptgoDzhHAs --delete-after -v --numeric-ids"
 
 # Directory patterns to exclude (weekdays vs Saturday)
 WEEKDAY_FILTER="climlab_scratch"
@@ -54,10 +55,11 @@ get_host_cores() {
 # Check if destination supports rsync -X option (extended attributes)
 # Returns "yes" if supported, "no" otherwise
 check_rsync_xattr_support() {
+
     local dest_dir="$1"
     local test_dir="${dest_dir}/.rsync_xattr_test_$$"
     local result="no"
-
+    log_info "Testing xattr (-X) support ath the destination" 
     # Check if rsync supports -X first
     if ! rsync --help 2>&1 | grep -q "\-X, --xattrs"; then
         echo "$result"
@@ -80,7 +82,7 @@ check_rsync_xattr_support() {
 
     # Cleanup
     rm -rf "$test_dir" 2>/dev/null || true
-
+    log_info "Result $result"
     echo "$result"
 }
 
@@ -244,6 +246,8 @@ build_task_queue() {
         # Calculate depth by counting slashes after removing src_dir prefix
         local rel_path="${dir#$src_dir}"
         rel_path="${rel_path#/}"
+        # Strip trailing slash if present
+        rel_path="${rel_path%/}"
 
         # Use parameter expansion to count slashes (faster than tr | wc)
         local rel_depth="${rel_path//[^\/]/}"
@@ -258,8 +262,11 @@ build_task_queue() {
             else
                 dest_path="$dest_dir/$rel_path"
             fi
+            # Convert source path to absolute path to avoid issues with rsync
+            local abs_src_dir
+            abs_src_dir=$(cd "$(dirname "$dir")" && pwd)/$(basename "$dir")
             task_file="${task_dir}/task_$(printf '%06d' $task_id)"
-            echo "$rel_depth|$dir|$dest_path|$rsync_opts" > "$task_file"
+            echo "$rel_depth|$abs_src_dir|$dest_path|$rsync_opts" > "$task_file"
             echo  task=$task_id, rel_depth=$rel_depth: rsync $rsync_opts $dir $dest_path    >> "$GLOBAL_LOG"
             ((task_id++)) || true
         fi
@@ -298,45 +305,55 @@ process_task() {
         is_remote=1
     fi
 
-    # Run rsync
-    local rsync_cmd="rsync $rsync_opts"
-
     # Handle the root task (level 0) specially - non-recursive using --dirs
     # This backs up files and immediate subdirectories of the source folder (depth 1 only)
     # For subdirectories: -r for shallower (to include full subtree), -r for max depth
-    if [[ "$level" -eq 0 ]]; then
-        rsync_cmd="$rsync_cmd --dirs"
-    elif [[ "$level" -lt "$max_depth" ]]; then
-        rsync_cmd="$rsync_cmd -r"
+    if [[ "$level" -lt "$max_depth" ]]; then
+        rsync_opts="$rsync_opts --dirs"
     else
-        rsync_cmd="$rsync_cmd -r"
+        rsync_opts="$rsync_opts -r"
     fi
 
-    # Apply filter
+    # Get filter (excludes climlab_scratch on weekdays, 314159027 on Saturday)
     local filter
     filter=$(get_filter)
-    rsync_cmd="$rsync_cmd --exclude=$filter"
+
+    # Build rsync options
+    local rsync_opts_arr=($rsync_opts --exclude="$filter")
 
     # Dry run flag
     if [[ "$dry_run" == "true" ]]; then
-        rsync_cmd="$rsync_cmd --dry-run"
+        rsync_opts_arr+=(--dry-run)
     fi
 
-    # Handle remote destination - only build this once if remote
+    # Log the command (with rsync-path for remote)
     if [[ $is_remote -eq 1 ]]; then
-        # Use single quotes around path for remote shell
-        rsync_cmd="$rsync_cmd --rsync-path=\"mkdir -p '${remote_path}' && rsync\""
-        rsync_cmd="$rsync_cmd \"$src/\" \"$dest/\""
+        #log_info "Task $worker_id: rsync ${rsync_opts_arr[*]} --rsync-path='mkdir -p '\''${remote_path}'\'' && rsync' '$src/' '$dest/'"
+        #echo "Running: rsync ${rsync_opts_arr[*]} --rsync-path='mkdir -p '\''${remote_path}'\'' && rsync' '$src/' '$dest/'" >> "$log_file"
+        log_info "Task $worker_id: rsync ${rsync_opts_arr[*]} '$src/' '$dest'"
+        echo "Running: ssh -n $remote_host \"mkdir -p '$remote_path' \" " >> "$log_file"
+        echo "Running: rsync ${rsync_opts_arr[*]} '$src/' '$dest'" >> "$log_file"
+    else
+        log_info "Task $worker_id: rsync ${rsync_opts_arr[*]} '$src/' '$dest'"
+        echo "Running: rsync ${rsync_opts_arr[*]} '$src/' '$dest'" >> "$log_file"
+    fi
+    echo "DEBUG: remote_path='$remote_path', is_remote=$is_remote" >> "$log_file"
+
+    # Execute rsync
+    if [[ $is_remote -eq 1 ]]; then
+        # Remote destination - create directory first via SSH, then rsync
+         ssh -n "$remote_host" "mkdir -p '$remote_path'" 2>/dev/null || true
+         #rsync "${rsync_opts_arr[@]}" "$src/" "$dest/" >> "$log_file" 2>&1
+         #found no way to pass remote path with spaces"
+         #rsync "${rsync_opts_arr[@]}" "--rsync-path=\"mkdir -p '${remote_path}' && rsync\"" "$src/" "$dest/" >> "$log_file" 2>&1
     else
         # Local destination - create directory
         mkdir -p "$dest"
-        rsync_cmd="$rsync_cmd \"$src/\" \"$dest/\""
+        rsync "${rsync_opts_arr[@]}" "$src/" "$dest/" >> "$log_file" 2>&1
     fi
-
-    log_info "Task $worker_id: $rsync_cmd"
-    echo "Running: $rsync_cmd" >> "$log_file"
-    eval "$rsync_cmd" >> "$log_file" 2>&1
-    return $?
+    local result=$?
+    echo "Exit status: $result" >> "$log_file"
+    return $result
 }
 
 run_worker_pool() {
@@ -526,10 +543,10 @@ build_rsync_options() {
     local opts="$RSYNC_OPTS"
 
     # Check if destination supports -X (extended attributes)
-    local xattr_support
+    # local xattr_support
     xattr_support=$(check_rsync_xattr_support "$dest")
     if [[ "$xattr_support" == "yes" ]]; then
-        opts="$opts -X"
+         opts="$opts -X"
     fi
 
     echo "$opts"
@@ -663,16 +680,6 @@ main() {
         # Clean up task queue directory
         rm -rf "$task_queue" 2>/dev/null || true
 
-        # Clean up any temporary files in destination
-        # Rsync may create temporary files like .FILENAME.XXXXXX during transfers
-        if [[ "$dest" =~ ^([^:]+): ]]; then
-            # Remote destination - cleanup via SSH
-            local remote_dest_path="${dest#*:}"
-            ssh -o BatchMode=yes "${dest%%:*}" "find '$remote_dest_path' -name '.*' -type f -delete 2>/dev/null || true" 2>/dev/null || true
-        else
-            # Local destination - direct cleanup
-            find "${dest}" -name '.*' -type f -delete 2>/dev/null || true
-        fi
     done
 
     # Clean up any leftover .tasks directories from failed runs

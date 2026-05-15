@@ -21,10 +21,17 @@ HOSTNAME="$(hostname -s)"
 # Example: BACKUP_JOBS=("./src|/dest" "server:/path|/local/dest") ./ai-backup.sh
 # Or use a wrapper script that sets the array before sourcing
 # Note: Array cannot be exported from shell environment, so use string fallback
-BACKUP_JOBS=("./test_data|/home/serguei/aibkpcl/test_remote_backup/test_data")
+BACKUP_JOBS=("${BACKUP_JOBS[@]+"${BACKUP_JOBS[@]}"}")
+if [[ ${#BACKUP_JOBS[@]} -eq 0 ]] && [[ -n "${BACKUP_JOBS:-}" ]]; then
+    # BACKUP_JOBS is a string (from export), parse it
+    IFS=';' read -ra BACKUP_JOBS <<< "${BACKUP_JOBS:-}"
+fi
+if [[ ${#BACKUP_JOBS[@]} -eq 0 ]]; then
+    BACKUP_JOBS=("./test_data|localhost:$PWD/test_remote_backup/test_data")
+fi
 
 # rsync flags
-RSYNC_OPTS="-lptgoDzhHAx --delete -v --numeric-ids"
+RSYNC_OPTS="-lptgoDzhHA --delete-after -v --numeric-ids"
 
 # Directory patterns to exclude (weekdays vs Saturday)
 WEEKDAY_FILTER="climlab_scratch"
@@ -237,6 +244,8 @@ build_task_queue() {
         # Calculate depth by counting slashes after removing src_dir prefix
         local rel_path="${dir#$src_dir}"
         rel_path="${rel_path#/}"
+        # Strip trailing slash if present
+        rel_path="${rel_path%/}"
 
         # Use parameter expansion to count slashes (faster than tr | wc)
         local rel_depth="${rel_path//[^\/]/}"
@@ -251,8 +260,11 @@ build_task_queue() {
             else
                 dest_path="$dest_dir/$rel_path"
             fi
+            # Convert source path to absolute path to avoid issues with rsync
+            local abs_src_dir
+            abs_src_dir=$(cd "$(dirname "$dir")" && pwd)/$(basename "$dir")
             task_file="${task_dir}/task_$(printf '%06d' $task_id)"
-            echo "$rel_depth|$dir|$dest_path|$rsync_opts" > "$task_file"
+            echo "$rel_depth|$abs_src_dir|$dest_path|$rsync_opts" > "$task_file"
             echo  task=$task_id, rel_depth=$rel_depth: rsync $rsync_opts $dir $dest_path    >> "$GLOBAL_LOG"
             ((task_id++)) || true
         fi
@@ -294,11 +306,10 @@ process_task() {
     # Run rsync
     local rsync_cmd="rsync $rsync_opts"
 
-    # Handle the root task (level 0) specially - non-recursive using --dirs
-    # This backs up files and immediate subdirectories of the source folder (depth 1 only)
-    # For subdirectories: -r for shallower (to include full subtree), -r for max depth
+    # Handle the root task (level 0) specially - recursive (-r) to include all files and directories
+    # For subdirectories: -r for all levels
     if [[ "$level" -eq 0 ]]; then
-        rsync_cmd="$rsync_cmd --dirs"
+        rsync_cmd="$rsync_cmd -r"
     elif [[ "$level" -lt "$max_depth" ]]; then
         rsync_cmd="$rsync_cmd -r"
     else
@@ -319,11 +330,11 @@ process_task() {
     if [[ $is_remote -eq 1 ]]; then
         # Use single quotes around path for remote shell
         rsync_cmd="$rsync_cmd --rsync-path=\"mkdir -p '${remote_path}' && rsync\""
-        rsync_cmd="$rsync_cmd \"$src/\" \"$dest/\""
+        rsync_cmd="$rsync_cmd \"$src/\" \"$dest\""
     else
         # Local destination - create directory
         mkdir -p "$dest"
-        rsync_cmd="$rsync_cmd \"$src/\" \"$dest/\""
+        rsync_cmd="$rsync_cmd \"$src/\" \"$dest\""
     fi
 
     log_info "Task $worker_id: $rsync_cmd"
@@ -518,12 +529,12 @@ build_rsync_options() {
     local dest="$1"
     local opts="$RSYNC_OPTS"
 
-    # Check if destination supports -X (extended attributes)
-    local xattr_support
-    xattr_support=$(check_rsync_xattr_support "$dest")
-    if [[ "$xattr_support" == "yes" ]]; then
-        opts="$opts -X"
-    fi
+    # Check if destination supports -X (extended attributes) - disabled due to issues with paths containing spaces
+    # local xattr_support
+    # xattr_support=$(check_rsync_xattr_support "$dest")
+    # if [[ "$xattr_support" == "yes" ]]; then
+    #     opts="$opts -X"
+    # fi
 
     echo "$opts"
 }
