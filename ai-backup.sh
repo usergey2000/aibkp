@@ -540,6 +540,26 @@ Configuration (environment variables):
 EOF
 }
 
+# Check if path is on Lustre filesystem with lustre.lov xattr
+check_lustre_xattr() {
+    local path="$1"
+    local result="no"
+
+    # Get the mount point for the path
+    local mount_point
+    mount_point=$(df "$path" 2>/dev/null | tail -1 | awk '{print $6}')
+
+    # Check if it's a Lustre filesystem
+    if mount | grep -q " lustre " && mount | grep "$mount_point" | grep -q " lustre "; then
+        # Check if Lustre has user_xattr enabled (not disabled with nouser_xattr)
+        if ! mount | grep "$mount_point" | grep -q "nouser_xattr"; then
+            result="yes"
+        fi
+    fi
+
+    echo "$result"
+}
+
 # Build rsync options based on destination capabilities
 build_rsync_options() {
     local dest="$1"
@@ -551,6 +571,15 @@ build_rsync_options() {
     if [[ "$xattr_support" == "yes" ]]; then
          opts="$opts -X"
     fi
+
+    # Check if destination is on Lustre with lustre.lov xattr
+    local lustre_check
+    lustre_check=$(check_lustre_xattr "$dest")
+    if [[ "$lustre_check" == "yes" ]]; then
+        opts="$opts --filter=-x lustre.lov"
+        log_info "Lustre lustre.lov xattr detected, adding --filter option"
+    fi
+
     log_info "build_rsync_options:: Opts= $opts"
     echo "$opts"
 }
