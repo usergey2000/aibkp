@@ -348,7 +348,7 @@ process_task() {
     if [[ $is_remote -eq 1 ]]; then
         # Remote destination - create directory first via SSH, then rsync
          ssh -n "$remote_host" "mkdir -p '$remote_path'" 2>/dev/null || true
-         #rsync "${rsync_opts_arr[@]}" "$src/" "$dest/" >> "$log_file" 2>&1
+         rsync "${rsync_opts_arr[@]}" "$src/" "$dest/" >> "$log_file" 2>&1
          #found no way to pass remote path with spaces"
          #rsync "${rsync_opts_arr[@]}" "--rsync-path=\"mkdir -p '${remote_path}' && rsync\"" "$src/" "$dest/" >> "$log_file" 2>&1
     else
