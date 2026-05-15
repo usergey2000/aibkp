@@ -32,7 +32,7 @@ if [[ ${#BACKUP_JOBS[@]} -eq 0 ]]; then
 fi
 
 # rsync flags
-RSYNC_OPTS="-lptgoDzhHAs --delete-after -v --numeric-ids"
+RSYNC_OPTS="-lptgoDzhHAs --delete-after -v --numeric-ids --filter='-x lustre.lov'"
 
 # Directory patterns to exclude (weekdays vs Saturday)
 WEEKDAY_FILTER="climlab_scratch"
