@@ -62,7 +62,9 @@ check_rsync_xattr_support() {
     log_info "Testing xattr (-X) support ath the destination" 
     # Check if rsync supports -X first
    
-    if ! rsync --help 2>&1 | grep -q "\-X, --xattrs"; then
+   
+    res="$(rsync --help 2>&1 | grep  '\-X, --xattrs')"
+    if [ "0$res" == "0" ]; then
         echo "$result"
         log_info "rsync does not  supports -X"
         return 0
@@ -556,7 +558,7 @@ check_lustre_xattr() {
             result="yes"
         fi
     fi
-
+    log_info "Lustre lustre.lov xattr check for $path, result= $result"
     echo "$result"
 }
 
@@ -575,9 +577,9 @@ build_rsync_options() {
     # Check if destination is on Lustre with lustre.lov xattr
     local lustre_check
     lustre_check=$(check_lustre_xattr "$dest")
-    if [[ "$lustre_check" == "yes" ]]; then
+    if [[ "$lustre_check" == "no" ]]; then
         opts="$opts --filter=-x lustre.lov"
-        log_info "Lustre lustre.lov xattr detected, adding --filter option"
+        log_info "Lustre lustre.lov xattr not detected at $dest, adding --filter option"
     fi
 
     log_info "build_rsync_options:: Opts= $opts"
