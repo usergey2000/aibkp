@@ -563,23 +563,28 @@ check_lustre_xattr() {
 }
 
 # Build rsync options based on destination capabilities
+# Arguments: dest, lustre_check_at_source (optional)
 build_rsync_options() {
     local dest="$1"
+    local lustre_at_src="${2:-no}"
     local opts="$RSYNC_OPTS"
 
     # Check if destination supports -X (extended attributes)
     # local xattr_support
     xattr_support=$(check_rsync_xattr_support "$dest")
-    if [[ "$xattr_support" == "yes" ]]; then
-         opts="$opts -X"
+    if [[ "$xattr_support" == "yes" ]] && [[ "$lustre_at_src" == "no" ]]; then
+        opts="$opts -X"
+        log_info "Applying -X for extended attributes preservation"
+    else
+        log_info "Skipping -X (lustre at source: $lustre_at_src, xattr_support: $xattr_support)"
     fi
 
     # Check if destination is on Lustre with lustre.lov xattr
     local lustre_check
     lustre_check=$(check_lustre_xattr "$dest")
-    if [[ "$lustre_check" == "no" ]]; then
-        opts="$opts --filter=-x lustre.lov"
-        log_info "Lustre lustre.lov xattr not detected at $dest, adding --filter option"
+    if [[ "$lustre_check" == "yes" ]]; then
+        opts="$opts --filter='xattr(lustre.lov)'"
+        log_info "Lustre lustre.lov xattr detected at $dest, adding filter"
     fi
 
     log_info "build_rsync_options:: Opts= $opts"
@@ -694,9 +699,14 @@ main() {
 
         log_info "Processing: $src -> $dest"
 
+        # Check if lustre is detected at source
+        local lustre_check
+        lustre_check=$(check_lustre_xattr "$src")
+        log_info "Lustre check for source $src: $lustre_check"
+
         # Build rsync options for this destination
         local rsync_opts
-        rsync_opts=$(build_rsync_options "$dest")
+        rsync_opts=$(build_rsync_options "$dest" "$lustre_check")
         log_info "Using rsync options: $rsync_opts"
 
         # Build task queue
