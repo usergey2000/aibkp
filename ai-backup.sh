@@ -59,35 +59,67 @@ check_rsync_xattr_support() {
     local dest_dir="$1"
     local test_dir="${dest_dir}/.rsync_xattr_test_$$"
     local result="no"
-    log_info "Testing xattr (-X) support ath the destination" 
+    log_info "Testing xattr (-X) support at the destination: $dest_dir"
+
     # Check if rsync supports -X first
-   
-   
-    res="$(rsync --help 2>&1 | grep  '\-X, --xattrs')"
-    if [ "0$res" == "0" ]; then
+    local rsync_help
+    rsync_help=$(rsync --help 2>&1 | grep '\-X, --xattrs')
+    if [ -z "$rsync_help" ]; then
         echo "$result"
-        log_info "rsync does not  supports -X"
+        log_info "rsync does not support -X"
         return 0
     fi
 
-    # Create test directory
-    mkdir -p "$test_dir" 2>/dev/null || {
-        echo "$result"
-        log_info "Can not create $test_dir"
-        return 0
-    }
+    # Parse destination to check if remote
+    local remote_host=""
+    if [[ "$dest_dir" =~ ^([^:]+):(.+)$ ]]; then
+        remote_host="${BASH_REMATCH[1]}"
+        local remote_path="${BASH_REMATCH[2]}"
+        test_dir="${remote_path}/.rsync_xattr_test_$$"
+    fi
 
-    # Try to set an extended attribute
-    if setfattr -n user.test -v "test" "$test_dir" 2>/dev/null; then
-        # Test rsync with -X on this filesystem
-        if rsync -X --dry-run "$test_dir"/ "$test_dir"/backup >/dev/null 2>&1; then
-            result="yes"
+    # Create test directory (local or remote)
+    if [[ -z "$remote_host" ]]; then
+        # Local destination
+        if ! mkdir -p "$test_dir" 2>/dev/null; then
+            echo "$result"
+            log_info "Cannot create test directory $test_dir"
+            return 0
+        fi
+    else
+        # Remote destination
+        if ! ssh -o BatchMode=yes "$remote_host" "mkdir -p '$test_dir'" 2>/dev/null; then
+            echo "$result"
+            log_info "Cannot create test directory $test_dir on remote host"
+            return 0
         fi
     fi
 
-    # Cleanup
-    rm -rf "$test_dir" 2>/dev/null || true
-    log_info "Result $result"
+    # Try to set an extended attribute
+    if [[ -z "$remote_host" ]]; then
+        # Local
+        if setfattr -n user.test -v "test" "$test_dir" 2>/dev/null; then
+            if rsync -X --dry-run "$test_dir"/ "$test_dir"/backup >/dev/null 2>&1; then
+                result="yes"
+            fi
+        fi
+    else
+        # Remote - use SSH to run commands
+        if ssh -o BatchMode=yes "$remote_host" "setfattr -n user.test -v 'test' '$test_dir'" 2>/dev/null; then
+            if ssh -o BatchMode=yes "$remote_host" "rsync -X --dry-run '$test_dir/' '$test_dir'/backup" >/dev/null 2>&1; then
+                result="yes"
+            fi
+        fi
+    fi
+
+    # Cleanup (local or remote)
+    if [[ -z "$remote_host" ]]; then
+        rm -rf "$test_dir" 2>/dev/null || true
+    else
+        ssh -o BatchMode=yes "$remote_host" "rm -rf '$test_dir'" 2>/dev/null || true
+    fi
+
+    log_info "Result: $result"
     echo "$result"
 }
 
