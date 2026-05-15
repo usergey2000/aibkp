@@ -317,8 +317,7 @@ build_task_queue() {
 process_task() {
     local task_file="$1"
     local log_dir="$2"
-    local dry_run="$3"
-    local max_depth="$4"
+    local max_depth="$3"
 
     local task
     task=$(cat "$task_file")
@@ -358,11 +357,6 @@ process_task() {
     # Build rsync options as string
     local rsync_opts_str="$rsync_opts --exclude=$filter"
 
-    # Dry run flag
-    if [[ "$dry_run" == "true" ]]; then
-        rsync_opts_str="$rsync_opts_str --dry-run"
-    fi
-
     # Log the command (with rsync-path for remote)
     if [[ $is_remote -eq 1 ]]; then
         #log_info "Task $worker_id: rsync $rsync_opts_str --rsync-path='mkdir -p '\''${remote_path}'\'' && rsync' '$src/' '$dest/'"
@@ -397,9 +391,8 @@ run_worker_pool() {
     local task_dir="$1"
     local jobs="$2"
     local log_dir="$3"
-    local dry_run="$4"
-    local max_depth="$5"
-    local rsync_opts="$6"
+    local max_depth="$4"
+    local rsync_opts="$5"
 
     # Store running PIDs
     local -a running_pids=()
@@ -462,7 +455,7 @@ run_worker_pool() {
         fi
 
         # Start task in background
-        process_task "$task_file" "$log_dir" "$dry_run" "$max_depth" &
+        process_task "$task_file" "$log_dir" "$max_depth" &
         local pid=$!
         running_pids+=($pid)
         ((task_count++)) || true
@@ -717,9 +710,6 @@ main() {
     fi
 
     log_info "Starting backup with $jobs workers, depth=$depth"
-    if [[ "$dry_run" == "true" ]]; then
-        log_info "DRY RUN MODE - No changes will be made"
-    fi
 
     # Process each backup job
     for job in "${BACKUP_JOBS[@]}"; do
@@ -742,6 +732,12 @@ main() {
         rsync_opts=$(build_rsync_options "$dest" "$lustre_check")
         log_info "Using rsync options: $rsync_opts"
 
+        # Add --dry-run to rsync options if in dry run mode
+        if [[ "$dry_run" == "true" ]]; then
+            rsync_opts="$rsync_opts --dry-run"
+            log_info "Added --dry-run to rsync options"
+        fi
+
         # Build task queue
         local task_queue
         task_queue=$(mktemp -d)
@@ -752,7 +748,7 @@ main() {
         log_info "Built task queue with $task_count tasks"
 
         # Run worker pool
-        run_worker_pool "$task_queue" "$jobs" "$LOG_DIR" "$dry_run" "$depth" "$rsync_opts"
+        run_worker_pool "$task_queue" "$jobs" "$LOG_DIR" "$depth" "$rsync_opts"
 
         # Clean up task queue directory
         rm -rf "$task_queue" 2>/dev/null || true
