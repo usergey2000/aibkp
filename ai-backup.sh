@@ -61,14 +61,17 @@ check_rsync_xattr_support() {
     local result="no"
     log_info "Testing xattr (-X) support ath the destination" 
     # Check if rsync supports -X first
+   
     if ! rsync --help 2>&1 | grep -q "\-X, --xattrs"; then
         echo "$result"
+        log_info "rsync does not  supports -X"
         return 0
     fi
 
     # Create test directory
     mkdir -p "$test_dir" 2>/dev/null || {
         echo "$result"
+        log_info "Can not create $test_dir"
         return 0
     }
 
@@ -548,7 +551,7 @@ build_rsync_options() {
     if [[ "$xattr_support" == "yes" ]]; then
          opts="$opts -X"
     fi
-
+    log_info "build_rsync_options:: Opts= $opts"
     echo "$opts"
 }
 
