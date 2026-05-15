@@ -323,24 +323,24 @@ process_task() {
     local filter
     filter=$(get_filter)
 
-    # Build rsync options
-    local rsync_opts_arr=($rsync_opts --exclude="$filter")
+    # Build rsync options as string
+    local rsync_opts_str="$rsync_opts --exclude=$filter"
 
     # Dry run flag
     if [[ "$dry_run" == "true" ]]; then
-        rsync_opts_arr+=(--dry-run)
+        rsync_opts_str="$rsync_opts_str --dry-run"
     fi
 
     # Log the command (with rsync-path for remote)
     if [[ $is_remote -eq 1 ]]; then
-        #log_info "Task $worker_id: rsync ${rsync_opts_arr[*]} --rsync-path='mkdir -p '\''${remote_path}'\'' && rsync' '$src/' '$dest/'"
-        #echo "Running: rsync ${rsync_opts_arr[*]} --rsync-path='mkdir -p '\''${remote_path}'\'' && rsync' '$src/' '$dest/'" >> "$log_file"
-        log_info "Task $worker_id: rsync ${rsync_opts_arr[*]} '$src/' '$dest'"
+        #log_info "Task $worker_id: rsync $rsync_opts_str --rsync-path='mkdir -p '\''${remote_path}'\'' && rsync' '$src/' '$dest/'"
+        #echo "Running: rsync $rsync_opts_str --rsync-path='mkdir -p '\''${remote_path}'\'' && rsync' '$src/' '$dest/'" >> "$log_file"
+        log_info "Task $worker_id: rsync $rsync_opts_str '$src/' '$dest'"
         echo "Running: ssh -n $remote_host \"mkdir -p '$remote_path' \" " >> "$log_file"
-        echo "Running: rsync ${rsync_opts_arr[*]} '$src/' '$dest'" >> "$log_file"
+        echo "Running: rsync $rsync_opts_str '$src/' '$dest'" >> "$log_file"
     else
-        log_info "Task $worker_id: rsync ${rsync_opts_arr[*]} '$src/' '$dest'"
-        echo "Running: rsync ${rsync_opts_arr[*]} '$src/' '$dest'" >> "$log_file"
+        log_info "Task $worker_id: rsync $rsync_opts_str '$src/' '$dest'"
+        echo "Running: rsync $rsync_opts_str '$src/' '$dest'" >> "$log_file"
     fi
     echo "DEBUG: remote_path='$remote_path', is_remote=$is_remote" >> "$log_file"
 
@@ -348,13 +348,13 @@ process_task() {
     if [[ $is_remote -eq 1 ]]; then
         # Remote destination - create directory first via SSH, then rsync
          ssh -n "$remote_host" "mkdir -p '$remote_path'" 2>/dev/null || true
-         rsync "${rsync_opts_arr[@]}" "$src/" "$dest/" >> "$log_file" 2>&1
+         rsync $rsync_opts_str "$src/" "$dest/" >> "$log_file" 2>&1
          #found no way to pass remote path with spaces"
-         #rsync "${rsync_opts_arr[@]}" "--rsync-path=\"mkdir -p '${remote_path}' && rsync\"" "$src/" "$dest/" >> "$log_file" 2>&1
+         #rsync $rsync_opts_str "--rsync-path=\"mkdir -p '${remote_path}' && rsync\"" "$src/" "$dest/" >> "$log_file" 2>&1
     else
         # Local destination - create directory
         mkdir -p "$dest"
-        rsync "${rsync_opts_arr[@]}" "$src/" "$dest/" >> "$log_file" 2>&1
+        rsync $rsync_opts_str "$src/" "$dest/" >> "$log_file" 2>&1
     fi
     local result=$?
     echo "Exit status: $result" >> "$log_file"
