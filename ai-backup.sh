@@ -37,13 +37,15 @@ fi
 
 # rsync flags
 RSYNC_OPTS="-lptgoDzhHAs --delete-after -v --numeric-ids"
+#
+SCRIPT_NAME=$(basename "$0" .sh)
 
 # Directory patterns to exclude (weekdays vs Saturday)
 WEEKDAY_FILTER="climlab_scratch"
 SATURDAY_FILTER="314159027"
 
 # Log directory
-LOG_DIR="./bkplog"
+LOG_DIR="./bkplog-${SCRIPT_NAME}"
 
 # Function to get core count from a host (local or remote)
 get_host_cores() {
@@ -156,7 +158,7 @@ if [[ $MAX_JOBS -lt 1 ]]; then
 fi
 
 # Lock file to prevent concurrent runs (use script name without extension)
-SCRIPT_NAME=$(basename "$0" .sh)
+
 LOCK_FILE="/tmp/.running_backup_${SCRIPT_NAME}"
 
 # Global log file (defined after SCRIPT_NAME is set)
