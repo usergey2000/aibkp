@@ -8,6 +8,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **2026-05-16** - Move `--dry-run` flag to rsync options before `run_worker_pool()`
+  - `--dry-run` is now added to `rsync_opts` before building the task queue
+  - Removed `dry_run` parameter from `run_worker_pool()` and `process_task()` functions
+
+### Added
+- **2026-05-15** - Use `find` instead of `ls` in `run_worker_pool()` to handle large task pools
+  - Overcomes "Argument list too long" error for large pools
+- **2026-05-15** - Restrict source folders listing with `--max-depth` in fd
+- **2026-05-15** - Filter the pool at list level instead of using `--exclude` rsync option
+- **2026-05-15** - Add remote destination support in `check_rsync_xattr_support()`
+  - Uses SSH to test xattr support on remote destinations
+- **2026-05-15** - Add Lustre filesystem detection with `check_lustre_xattr()`
+  - Skips `-X` flag when source is on Lustre filesystem
+
+### Fixed
+- **2026-05-16** - Use string instead of array for `rsync_opts_str` in `process_task()`
+- **2026-05-15** - Fix lustre.lov xattr filter syntax and logic
+- **2026-05-13** - Task cleanup: Add removal of `.processing` files and empty task directories in `run_worker_pool()` and `main()`
+- **2026-05-13** - Preserve global logs: Only clean task subdirectories, not the entire log directory
+- **2026-05-13** - Fix task queue path mismatch: use task_dir directly instead of task_queue.tasks suffix
+- **2026-05-13** - Fix worker pool not processing tasks: use mktemp -d for directory creation
+- **2026-05-13** - Fix set -euo pipefail issues by removing 'local' from task_file in while loop
+- **2026-05-13** - Fix LOCKFILE unbound variable: change to LOCK_FILE
 - **2026-05-13** - Task for source folder (level 0) uses non-recursive `--dirs` instead of `-r`
   - Source folder task only backs up files and immediate subdirectories at depth 1
   - Intermediate tasks use `-r` to backup full subtree recursively
@@ -15,15 +38,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **2026-05-13** - Add `--hidden` flag to fd in `build_task_queue()` to include hidden directories
   - Test data generator now creates both visible and hidden folders
-- **2026-05-13** - Add ai-backup-home.sh wrapper script for /home/serguei backup
-
-### Fixed
-- **2026-05-13** - Task cleanup: Add removal of `.processing` files and empty task directories in `run_worker_pool()` and `main()`
-- **2026-05-13** - Preserve global logs: Only clean task subdirectories, not the entire log directory
-- **2026-05-13** - Fix task queue path mismatch: use task_dir directly instead of task_queue.tasks suffix
-- **2026-05-13** - Fix worker pool not processing tasks: use mktemp -d for directory creation
-- **2026-05-13** - Fix set -euo pipefail issues by removing 'local' from task_file in while loop
-- **2026-05-13** - Fix LOCKFILE unbound variable: change to LOCK_FILE
 
 ## [0.1.0] - 2026-05-05
 
