@@ -27,6 +27,10 @@ if [[ ${#BACKUP_JOBS[@]} -eq 0 ]] && [[ -n "${BACKUP_JOBS:-}" ]]; then
     IFS=';' read -ra BACKUP_JOBS <<< "${BACKUP_JOBS:-}"
 fi
 if [[ ${#BACKUP_JOBS[@]} -eq 0 ]]; then
+    #BACKUP_JOBS=("/lstr/sahara|/raid60/metis_lstr_yesterday")
+    #BACKUP_JOBS=("/lstr/sahara/archive/metis_home/serguei4|/scratch/aibkp/serguei4")
+    #BACKUP_JOBS=("/lstr/sahara/archive/metis_home/serguei4|/raid60/metis_lstr_yesterday/archive/metis_home/serguei4")
+    #
     #BACKUP_JOBS=("./test_data|localhost:$PWD/test_remote_backup/test_data")
     BACKUP_JOBS=("./test_data|$PWD/test_remote_backup/test_data")
 fi
@@ -279,6 +283,11 @@ build_task_queue() {
     local src_len=${#src_dir}
 
     # Get all directories with their depth in one fd pass
+    # 
+    #We restrict fd directory search with --max-depth that shold be greater or equal to the requested depth  
+    let max_depth=$depth+1;
+    #Filter folder list to process here
+    SRCFILTER=$(get_filter)
     while IFS= read -r dir; do
         # Calculate depth by counting slashes after removing src_dir prefix
         local rel_path="${dir#$src_dir}"
@@ -307,7 +316,7 @@ build_task_queue() {
             echo  task=$task_id, rel_depth=$rel_depth: rsync $rsync_opts $dir $dest_path    >> "$GLOBAL_LOG"
             ((task_id++)) || true
         fi
-    done < <(fd -u --type directory --min-depth 1 . "$src_dir")
+    done < <(fd -u --type directory --min-depth 1  --max-depth $max_depth . "$src_dir" | sort | grep -v $SRCFILTER  )
 }
 
 # ==============================================================================
@@ -351,16 +360,16 @@ process_task() {
     fi
 
     # Get filter (excludes climlab_scratch on weekdays, 314159027 on Saturday)
-    local filter
-    filter=$(get_filter)
+    #local filter
+    #filter=$(get_filter)
 
     # Build rsync options as string
-    local rsync_opts_str="$rsync_opts --exclude=$filter"
+    # Filter folder list under build_task_queue build_task_queue. instead using exclude option here to save runtime
+    #local rsync_opts_str="$rsync_opts --exclude=$filter"
+    local rsync_opts_str="$rsync_opts"
 
     # Log the command (with rsync-path for remote)
     if [[ $is_remote -eq 1 ]]; then
-        #log_info "Task $worker_id: rsync $rsync_opts_str --rsync-path='mkdir -p '\''${remote_path}'\'' && rsync' '$src/' '$dest/'"
-        #echo "Running: rsync $rsync_opts_str --rsync-path='mkdir -p '\''${remote_path}'\'' && rsync' '$src/' '$dest/'" >> "$log_file"
         log_info "Task $worker_id: rsync $rsync_opts_str '$src/' '$dest'"
         echo "Running: ssh -n $remote_host \"mkdir -p '$remote_path' \" " >> "$log_file"
         echo "Running: rsync $rsync_opts_str '$src/' '$dest'" >> "$log_file"
@@ -368,14 +377,14 @@ process_task() {
         log_info "Task $worker_id: rsync $rsync_opts_str '$src/' '$dest'"
         echo "Running: rsync $rsync_opts_str '$src/' '$dest'" >> "$log_file"
     fi
-    echo "DEBUG: remote_path='$remote_path', is_remote=$is_remote" >> "$log_file"
+    #echo "DEBUG: remote_path='$remote_path', is_remote=$is_remote" >> "$log_file"
 
     # Execute rsync
     if [[ $is_remote -eq 1 ]]; then
         # Remote destination - create directory first via SSH, then rsync
          ssh -n "$remote_host" "mkdir -p '$remote_path'" 2>/dev/null || true
          rsync $rsync_opts_str "$src/" "$dest/" >> "$log_file" 2>&1
-         #found no way to pass remote path with spaces"
+         #found no way to pass the remote path with spaces with --rsync-path
          #rsync $rsync_opts_str "--rsync-path=\"mkdir -p '${remote_path}' && rsync\"" "$src/" "$dest/" >> "$log_file" 2>&1
     else
         # Local destination - create directory
@@ -404,9 +413,11 @@ run_worker_pool() {
 
     # Exit early if no tasks
     if [[ $total_tasks -eq 0 ]]; then
-        return 0
+        log_info "run_worker_pool: total_tasks= $total_tasks, return 0"
+     return 0
     fi
 
+    #log_info "run_worker_pool: nrunning_pids=${#running_pids[@]} jobs=$jobs"
 
     while true; do
         # OPTIMIZED: Get next available task using ls with numeric sort for ordering
@@ -414,8 +425,11 @@ run_worker_pool() {
         # Only get files that don't have .processing suffix (those are being worked on)
         task_file=""
         if [[ ${#running_pids[@]} -lt $jobs ]]; then
-            task_file=$(ls -1 "$task_dir"/task_* 2>/dev/null | grep -v '\.processing$' | head -n 1) || true
+            #NOTE::ls -1 cause the "Argument list too long" for large pools  
+            #task_file=$(ls -1 "$task_dir"/task_* 2>/dev/null | grep -v '\.processing$' | head -n 1) || true
+            task_file=$(find "$task_dir" -name "task_*" -type f ! -name "*.processing" | head -n 1) || true
         fi
+        #log_info "run_worker_pool: task_file=$task_file task_file1=$task_file1"
 
         if [[ -z "$task_file" ]] || [[ ! -f "$task_file" ]]; then
             # No more tasks to claim, check if we're done
@@ -455,6 +469,7 @@ run_worker_pool() {
         fi
 
         # Start task in background
+
         process_task "$task_file" "$log_dir" "$max_depth" &
         local pid=$!
         running_pids+=($pid)
@@ -748,6 +763,7 @@ main() {
         log_info "Built task queue with $task_count tasks"
 
         # Run worker pool
+        log_info "run_worker_pool "$task_queue" "$jobs" "$LOG_DIR" "$depth" "$rsync_opts""
         run_worker_pool "$task_queue" "$jobs" "$LOG_DIR" "$depth" "$rsync_opts"
 
         # Clean up task queue directory
