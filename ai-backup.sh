@@ -9,9 +9,7 @@
 
 set -euo pipefail
 
-# ==============================================================================
-# Configuration
-# ==============================================================================
+# ====== Configuration =====
 ADMIN_EMAIL="suzunyan@niu.edu"
 DATE="$(date +%Y%m%d)"
 HOSTNAME="$(hostname -s)"
@@ -42,35 +40,63 @@ SCRIPT_NAME=$(basename "$0" .sh)
 WEEKDAY_FILTER="climlab_scratch"
 SATURDAY_FILTER="314159027"
 
-# Log directory
-LOG_DIR="/local/home/root/lstrbkp/bkplog-${SCRIPT_NAME}"
+# Log directory - default to user's home if not explicitly set
+LOG_DIR="${LOG_DIR:-/local/home/root/lstrbkp/bkplog-${SCRIPT_NAME}}"
 
-# Function to get core count from a host (local or remote)
+# Cached xattr support results: keyed by destination path
+declare -A XATTR_CACHE=()
+
+# Cached remote core counts: keyed by hostname
+declare -A CORE_CACHE=()
+
+# ====== Helper Functions =====
+
+# Function to get core count from a host (local or remote) - with caching
 get_host_cores() {
     local host="$1"
+    if [[ -n "${CORE_CACHE[$host]+x}" ]]; then
+        echo "${CORE_CACHE[$host]}"
+        return
+    fi
+    local cores=4
     if [[ "$host" == "localhost" ]] || [[ "$host" == "127.0.0.1" ]] || [[ "$host" == "$(hostname)" ]]; then
-        nproc 2>/dev/null || echo 4
+        cores=$(nproc 2>/dev/null || echo 4)
     else
         # SSH to remote host and get core count
-        ssh -o ConnectTimeout=5 -o BatchMode=yes "$host" "nproc" 2>/dev/null | head -1 || echo 4
+        cores=$(ssh -o ConnectTimeout=5 -o BatchMode=yes "$host" "nproc" 2>/dev/null | head -1 || true)
+        cores="${cores:-4}"
+    fi
+    # Validate cores is a positive integer
+    if [[ "$cores" =~ ^[0-9]+$ ]] && [[ "$cores" -gt 0 ]]; then
+        CORE_CACHE[$host]=$cores
+        echo "$cores"
+    else
+        CORE_CACHE[$host]=4
+        echo 4
     fi
 }
 
 # Check if destination supports rsync -X option (extended attributes)
 # Returns "yes" if supported, "no" otherwise
+# Result is cached to avoid repeated SSH/hardware probes
 check_rsync_xattr_support() {
-
     local dest_dir="$1"
-    local test_dir="${dest_dir}/.rsync_xattr_test_$$"
+
+    # Return cached result if available
+    if [[ -n "${XATTR_CACHE[$dest_dir]+x}" ]]; then
+        echo "${XATTR_CACHE[$dest_dir]}"
+        return
+    fi
+
     local result="no"
-    log_info "Testing xattr (-X) support at the destination: $dest_dir"
 
     # Check if rsync supports -X first
     local rsync_help
-    rsync_help=$(rsync --help 2>&1 | grep '\-X, --xattrs')
-    if [ -z "$rsync_help" ]; then
-        echo "$result"
+    rsync_help=$(rsync --help 2>&1 | grep '\-X, --xattrs' || true)
+    if [[ -z "$rsync_help" ]]; then
+        XATTR_CACHE[$dest_dir]="no"
         log_info "rsync does not support -X"
+        echo "no"
         return 0
     fi
 
@@ -78,23 +104,28 @@ check_rsync_xattr_support() {
     local remote_host=""
     if [[ "$dest_dir" =~ ^([^:]+):(.+)$ ]]; then
         remote_host="${BASH_REMATCH[1]}"
-        local remote_path="${BASH_REMATCH[2]}"
-        test_dir="${remote_path}/.rsync_xattr_test_$$"
+        dest_dir="${BASH_REMATCH[2]}"
     fi
+
+    local test_dir="${dest_dir}/.rsync_xattr_test_$$"
 
     # Create test directory (local or remote)
     if [[ -z "$remote_host" ]]; then
         # Local destination
         if ! mkdir -p "$test_dir" 2>/dev/null; then
-            echo "$result"
+            XATTR_CACHE[$dest_dir]="no"
             log_info "Cannot create test directory $test_dir"
+            echo "no"
             return 0
         fi
     else
-        # Remote destination
-        if ! ssh -o BatchMode=yes "$remote_host" "mkdir -p '$test_dir'" 2>/dev/null; then
-            echo "$result"
+        # Remote destination - escape single quotes for SSH command
+        local escaped_dir
+        escaped_dir="${dest_dir//\'/\'\\\'\'}"
+        if ! ssh -o BatchMode=yes "$remote_host" "mkdir -p '${escaped_dir}'" 2>/dev/null; then
+            XATTR_CACHE[$dest_dir]="no"
             log_info "Cannot create test directory $test_dir on remote host"
+            echo "no"
             return 0
         fi
     fi
@@ -109,8 +140,12 @@ check_rsync_xattr_support() {
         fi
     else
         # Remote - use SSH to run commands
-        if ssh -o BatchMode=yes "$remote_host" "setfattr -n user.test -v 'test' '$test_dir'" 2>/dev/null; then
-            if ssh -o BatchMode=yes "$remote_host" "rsync -X --dry-run '$test_dir/' '$test_dir'/backup" >/dev/null 2>&1; then
+        local escaped_dir
+        escaped_dir="${dest_dir//\'/\'\\\'\'}"
+        local escaped_test
+        escaped_test="${test_dir//\'/\'\\\'\'}"
+        if ssh -o BatchMode=yes "$remote_host" "setfattr -n user.test -v 'test' '${escaped_test}'" 2>/dev/null; then
+            if ssh -o BatchMode=yes "$remote_host" "rsync -X --dry-run '${escaped_test}'/' '${escaped_test}'/backup" >/dev/null 2>&1; then
                 result="yes"
             fi
         fi
@@ -120,9 +155,13 @@ check_rsync_xattr_support() {
     if [[ -z "$remote_host" ]]; then
         rm -rf "$test_dir" 2>/dev/null || true
     else
-        ssh -o BatchMode=yes "$remote_host" "rm -rf '$test_dir'" 2>/dev/null || true
+        local escaped_test
+        escaped_test="${test_dir//\'/\'\\\'\'}"
+        ssh -o BatchMode=yes "$remote_host" "rm -rf '${escaped_test}'" 2>/dev/null || true
     fi
 
+    # Cache and return result
+    XATTR_CACHE[$dest_dir]="$result"
     log_info "Result: $result"
     echo "$result"
 }
@@ -130,7 +169,6 @@ check_rsync_xattr_support() {
 # Calculate minimum cores across all hosts in BACKUP_JOBS
 calculate_min_cores() {
     local min_cores
-    local cores
     min_cores=$(nproc 2>/dev/null || echo 4)
 
     # Parse BACKUP_JOBS to extract remote hosts
@@ -156,7 +194,6 @@ if [[ $MAX_JOBS -lt 1 ]]; then
 fi
 
 # Lock file to prevent concurrent runs (use script name without extension)
-SCRIPT_NAME=$(basename "$0" .sh)
 LOCK_FILE="/tmp/.running_backup_${SCRIPT_NAME}"
 
 # Global log file (defined after SCRIPT_NAME is set)
@@ -186,10 +223,7 @@ check_fd_dependencies() {
     fi
 }
 
-# ==============================================================================
-# Utility Functions
-# ==============================================================================
-
+# ====== Logging =====
 log() {
     local level="$1"
     shift
@@ -200,7 +234,7 @@ log() {
 log_info() { log "INFO" "$@"; }
 log_error() { log "ERROR" "$@"; }
 
-# Check if today is Saturday
+# Check if today is Saturday (ISO: 1=Mon ... 7=Sun, 6=Saturday)
 is_saturday() {
     [[ $(date +%u) -eq 6 ]]
 }
@@ -214,6 +248,12 @@ get_filter() {
     fi
 }
 
+# Escape single quotes in a string for safe embedding in SSH/eval commands
+escape_single_quotes() {
+    local str="$1"
+    echo "${str//\'/\'\\\'\'}"
+}
+
 # Calculate the depth of a directory tree (max depth) - OPTIMIZED
 # Uses fd with --max-depth and wc -l instead of bash loops
 calculate_depth() {
@@ -221,7 +261,6 @@ calculate_depth() {
     local max_depth=0
 
     # Find deepest directory using fd's depth info
-    # Output format: depth path, we take the max depth
     max_depth=$(fd --type directory --min-depth 1 --max-depth 100 . "$src_dir" 2>/dev/null | \
         sed "s|^[^/]*||" | tr -cd '/' | wc -L)
 
@@ -233,9 +272,7 @@ calculate_depth() {
     fi
 }
 
-# ==============================================================================
-# Lock Management
-# ==============================================================================
+# ====== Lock Management =====
 
 acquire_lock() {
     if [[ -f "$LOCK_FILE" ]]; then
@@ -258,9 +295,7 @@ release_lock() {
     rm -f "$LOCK_FILE"
 }
 
-# ==============================================================================
-# Phase 1: Expand - Build Task Queue
-# ==============================================================================
+# ====== Phase 1: Expand - Build Task Queue =====
 
 build_task_queue() {
     local src_dir="$1"
@@ -283,8 +318,14 @@ build_task_queue() {
     local src_len=${#src_dir}
 
     # Get all directories with their depth in one fd pass
-    let max_depth=$depth+1;
+    local max_depth=$((depth + 1))
+    local SRCFILTER
     SRCFILTER=$(get_filter)
+
+    # Anchor the grep filter to directory boundaries (^ or / prefix, / or $ suffix)
+    # so that partial matches (e.g. "myclimlab_scratch_foo") are not excluded
+    local filter_pattern="(^|/)$SRCFILTER(/|$)"
+
     while IFS= read -r dir; do
         # Calculate depth by counting slashes after removing src_dir prefix
         local rel_path="${dir#$src_dir}"
@@ -310,15 +351,16 @@ build_task_queue() {
             abs_src_dir=$(cd "$(dirname "$dir")" && pwd)/$(basename "$dir")
             task_file="${task_dir}/task_$(printf '%06d' $task_id)"
             echo "$rel_depth|$abs_src_dir|$dest_path|$rsync_opts" > "$task_file"
-            echo  task=$task_id, rel_depth=$rel_depth: rsync $rsync_opts $dir $dest_path    >> "$GLOBAL_LOG"
             ((task_id++)) || true
         fi
-    done < <(fd -u --type directory --min-depth 1  --max-depth $max_depth . "$src_dir" | sort | grep -v $SRCFILTER  )
+    done < <(fd -u --type directory --min-depth 1 --max-depth "$max_depth" . "$src_dir" 2>/dev/null | sort | grep -vE "$filter_pattern" || true)
 }
 
-# ==============================================================================
-# Phase 2: Pool - Worker Pool Management
-# ==============================================================================
+# ====== Phase 2: Pool - Worker Pool Management =====
+
+# Track failed tasks within this pool run
+FAILED_TASKS=""
+ERROR_COUNT=0
 
 process_task() {
     local task_file="$1"
@@ -334,12 +376,12 @@ process_task() {
 
     # Use worker_id based on task file number for consistent logging
     local task_basename="${task_file##*/}"
-    # Handle both task_XXXXX and task_XXXXX.processing naming
+    # Handle both task_XXX and task_XXX.processing naming
     local worker_id="${task_basename%.processing}"
     worker_id="${worker_id#task_}"
     local log_file="$log_dir/task_${worker_id}.log"
 
-    # OPTIMIZED: Parse destination once and cache the result
+    # Parse destination once and cache the result
     local remote_host="" remote_path="" is_remote=0
     if [[ "$dest" =~ ^([^:]+):(.+)$ ]]; then
         remote_host="${BASH_REMATCH[1]}"
@@ -356,20 +398,15 @@ process_task() {
         rsync_opts="$rsync_opts -r"
     fi
 
-    # Get filter (excludes climlab_scratch on weekdays, 314159027 on Saturday)
-    #local filter
-    #filter=$(get_filter)
-
     # Build rsync options as string
-    #local rsync_opts_str="$rsync_opts --exclude=$filter"
     local rsync_opts_str="$rsync_opts"
 
     # Log the command (with rsync-path for remote)
     if [[ $is_remote -eq 1 ]]; then
-        #log_info "Task $worker_id: rsync $rsync_opts_str --rsync-path='mkdir -p '\''${remote_path}'\'' && rsync' '$src/' '$dest/'"
-        #echo "Running: rsync $rsync_opts_str --rsync-path='mkdir -p '\''${remote_path}'\'' && rsync' '$src/' '$dest/'" >> "$log_file"
         log_info "Task $worker_id: rsync $rsync_opts_str '$src/' '$dest'"
-        echo "Running: ssh -n $remote_host \"mkdir -p '$remote_path' \" " >> "$log_file"
+        local escaped_path
+        escaped_path=$(escape_single_quotes "$remote_path")
+        echo "Running: ssh -n $remote_host \"mkdir -p '$escaped_path' \" " >> "$log_file"
         echo "Running: rsync $rsync_opts_str '$src/' '$dest'" >> "$log_file"
     else
         log_info "Task $worker_id: rsync $rsync_opts_str '$src/' '$dest'"
@@ -377,20 +414,26 @@ process_task() {
     fi
     echo "DEBUG: remote_path='$remote_path', is_remote=$is_remote" >> "$log_file"
 
-    # Execute rsync
+    # Execute rsync with proper quoting of options array
+    local rsync_args
+    eval "rsync_args=($rsync_opts_str)"
+
+    local result=0
     if [[ $is_remote -eq 1 ]]; then
         # Remote destination - create directory first via SSH, then rsync
-         ssh -n "$remote_host" "mkdir -p '$remote_path'" 2>/dev/null || true
-         rsync $rsync_opts_str "$src/" "$dest/" >> "$log_file" 2>&1
-         #found no way to pass remote path with spaces"
-         #rsync $rsync_opts_str "--rsync-path=\"mkdir -p '${remote_path}' && rsync\"" "$src/" "$dest/" >> "$log_file" 2>&1
+        local escaped_path
+        escaped_path=$(escape_single_quotes "$remote_path")
+        ssh -n "$remote_host" "mkdir -p '$escaped_path'" 2>/dev/null || true
+        rsync "${rsync_args[@]}" "$src/" "$dest/" >> "$log_file" 2>&1 || result=$?
     else
         # Local destination - create directory
         mkdir -p "$dest"
-        rsync $rsync_opts_str "$src/" "$dest/" >> "$log_file" 2>&1
+        rsync "${rsync_args[@]}" "$src/" "$dest/" >> "$log_file" 2>&1 || result=$?
     fi
-    local result=$?
+
     echo "Exit status: $result" >> "$log_file"
+
+    # Propagate exit code so caller's wait() picks it up
     return $result
 }
 
@@ -401,8 +444,12 @@ run_worker_pool() {
     local max_depth="$4"
     local rsync_opts="$5"
 
+    # Track failed tasks for the caller
+    local -a failed_tasks=()
+
     # Store running PIDs
     local -a running_pids=()
+    local -a running_task_files=()
     local task_count=0
     local total_tasks=0
 
@@ -411,23 +458,17 @@ run_worker_pool() {
 
     # Exit early if no tasks
     if [[ $total_tasks -eq 0 ]]; then
-        log_info "run_worker_pool: total_tasks= $total_tasks, return 0"
-     return 0
+        log_info "run_worker_pool: total_tasks=$total_tasks, return 0"
+        return 0
     fi
 
-    #log_info "run_worker_pool: nrunning_pids=${#running_pids[@]} jobs=$jobs"
-
     while true; do
-        # OPTIMIZED: Get next available task using ls with numeric sort for ordering
-        # This is faster than find + head for small task counts
+        # Get next available task using find (avoids 'Argument list too long' vs ls)
         # Only get files that don't have .processing suffix (those are being worked on)
-        task_file=""
-        task_file1=""
+        local task_file=""
         if [[ ${#running_pids[@]} -lt $jobs ]]; then
-            #task_file=$(ls -1 "$task_dir"/task_* 2>/dev/null | grep -v '\.processing$' | head -n 1) || true
             task_file=$(find "$task_dir" -name "task_*" -type f ! -name "*.processing" | head -n 1) || true
         fi
-        #log_info "run_worker_pool: task_file=$task_file task_file1=$task_file1"
 
         if [[ -z "$task_file" ]] || [[ ! -f "$task_file" ]]; then
             # No more tasks to claim, check if we're done
@@ -440,14 +481,22 @@ run_worker_pool() {
             if [[ ${#running_pids[@]} -gt 0 ]]; then
                 # Busy-wait with sleep for job completion
                 local new_pids=()
+                local new_task_files=()
+                local i=0
                 for pid in "${running_pids[@]}"; do
                     if ! kill -0 "$pid" 2>/dev/null; then
-                        wait "$pid" 2>/dev/null || true
+                        if ! wait "$pid" 2>/dev/null; then
+                            # Track which task failed
+                            failed_tasks+=("${running_task_files[$i]}")
+                        fi
                     else
                         new_pids+=("$pid")
+                        new_task_files+=("${running_task_files[$i]}")
                     fi
+                    ((i++)) || true
                 done
-                running_pids=("${new_pids[@]}")
+                running_pids=("${new_pids[@]+"${new_pids[@]}"}")
+                running_task_files=("${new_task_files[@]+"${new_task_files[@]}"}")
                 # Sleep briefly before checking for more tasks
                 sleep 0.05
             else
@@ -456,10 +505,20 @@ run_worker_pool() {
             continue
         fi
 
-        # Try to claim the task by renaming it atomically
-        local task_processing="${task_file}.processing"
-        if mv "$task_file" "$task_processing" 2>/dev/null; then
-            task_file="$task_processing"
+        # Try to claim the task by creating an atomic hard link
+        # ln fails with EEXIST if the file already exists (other worker claimed it first)
+        local task_link="${task_dir}/.claim_$$_${RANDOM}"
+        if ln "$task_file" "$task_link" 2>/dev/null; then
+            # Successfully claimed - rename .claim_X to .processing for visibility
+            rm -f "$task_link"
+            if mv "$task_file" "${task_file}.processing" 2>/dev/null; then
+                task_file="${task_file}.processing"
+            else
+                # Race: another worker claimed it between ln and mv
+                rm -f "$task_link"
+                sleep 0.05
+                continue
+            fi
         else
             # Task was already claimed by another process, wait briefly
             sleep 0.05
@@ -467,84 +526,82 @@ run_worker_pool() {
         fi
 
         # Start task in background
-
-        process_task "$task_file" "$log_dir" "$max_depth" &
+        ( process_task "$task_file" "$log_dir" "$max_depth" ) &
         local pid=$!
         running_pids+=($pid)
+        running_task_files+=("$task_file")
         ((task_count++)) || true
 
         # If we've hit the job limit, wait for at least one to complete
         if [[ ${#running_pids[@]} -ge $jobs ]]; then
             # Wait for any one job to complete
             local new_pids=()
+            local new_task_files=()
+            local i=0
             for pid in "${running_pids[@]}"; do
                 if ! kill -0 "$pid" 2>/dev/null; then
-                    wait "$pid" 2>/dev/null || true
-                    # Skip this pid (it's done)
+                    if ! wait "$pid" 2>/dev/null; then
+                        failed_tasks+=("${running_task_files[$i]}")
+                    fi
                 else
                     new_pids+=("$pid")
+                    new_task_files+=("${running_task_files[$i]}")
                 fi
+                ((i++)) || true
             done
-            running_pids=("${new_pids[@]}")
+            running_pids=("${new_pids[@]+"${new_pids[@]}"}")
+            running_task_files=("${new_task_files[@]+"${new_task_files[@]}"}")
         fi
     done
 
     # Wait for all remaining jobs to complete
+    local had_errors=0
     for pid in "${running_pids[@]}"; do
-        wait "$pid" 2>/dev/null || true
+        if ! wait "$pid" 2>/dev/null; then
+            had_errors=1
+        fi
     done
 
-    # Clean up task directory (including any .processing files)
-    #rm -rf "$task_dir"
+    # Report failed tasks to the caller
+    if [[ $had_errors -eq 1 ]] || [[ ${#failed_tasks[@]} -gt 0 ]]; then
+        for ft in "${failed_tasks[@]}"; do
+            log_error "Task failed: $ft"
+        done
+        return 1
+    fi
+
+    return 0
 }
 
-# ==============================================================================
-# Phase 3: Analyse - Scan Logs for Errors
-# ==============================================================================
+# ====== Phase 3: Analyse - Scan Logs for Errors =====
 
 analyse_logs() {
     local log_dir="$1"
     local error_count=0
-    local error_summary=""
 
     log_info "Scanning logs for errors..."
 
-    # OPTIMIZED: Combine all error patterns into a single grep command
-    # Error patterns (case-insensitive) - combined into extended regex
-    local error_patterns="rsync error:|error:"
+    # Single pass through all logs: collect errors and count in one grep
+    local error_lines=()
 
-    # Single pass through all logs looking for errors
-    local error_files=""
-    for log_file in "$log_dir"/task_*.log; do
+    for log_file in "$log_dir"/task_*.log "$log_dir"/worker_*.log; do
         [[ -f "$log_file" ]] || continue
 
-        # Count error occurrences in one pass
+        # Count matches in one pass
         local matches
-        matches=$(grep -iE "$error_patterns" "$log_file" 2>/dev/null | wc -l)
+        matches=$(grep -ciE "rsync error:|error:" "$log_file" 2>/dev/null || true)
 
-        if [[ $matches -gt 0 ]]; then
-            log_error "Errors found in $log_file"
+        if [[ "$matches" -gt 0 ]]; then
+            log_error "Errors found in $log_file ($matches match(es))"
             error_count=$((error_count + matches))
-            # Append error lines to global log
-            while IFS= read -r line; do
-                echo "[$(date '+%Y-%m-%d %H:%M:%S')] [ERROR] $line" >> "$GLOBAL_LOG"
-            done < <(grep -i "error:" "$log_file" 2>/dev/null || true)
-        fi
-    done
-
-    # Also check worker_*.log files for compatibility
-    for log_file in "$log_dir"/worker_*.log; do
-        [[ -f "$log_file" ]] || continue
-
-        local matches
-        matches=$(grep -iE "$error_patterns" "$log_file" 2>/dev/null | wc -l)
-
-        if [[ $matches -gt 0 ]]; then
-            log_error "Errors found in $log_file"
-            error_count=$((error_count + matches))
-            while IFS= read -r line; do
-                echo "[$(date '+%Y-%m-%d %H:%M:%S')] [ERROR] $line" >> "$GLOBAL_LOG"
-            done < <(grep -i "error:" "$log_file" 2>/dev/null || true)
+            # Append error lines to global log (extracted from the same grep above)
+            local file_error_lines
+            file_error_lines=$(grep -iE "rsync error:|error:" "$log_file" 2>/dev/null || true)
+            if [[ -n "$file_error_lines" ]]; then
+                while IFS= read -r line; do
+                    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [ERROR] $line" >> "$GLOBAL_LOG"
+                done <<< "$file_error_lines"
+            fi
         fi
     done
 
@@ -559,9 +616,27 @@ analyse_logs() {
     return 0
 }
 
-# ==============================================================================
-# Help and Usage
-# ==============================================================================
+# ====== Signal Handling =====
+
+# Forward signals to child processes and clean up
+SIGNAL_RECEIVED=0
+handle_signal() {
+    SIGNAL_RECEIVED=1
+    log_info "Received signal, cleaning up..."
+    # Kill all remaining child processes
+    local pids
+    pids=$(jobs -p 2>/dev/null || true)
+    if [[ -n "$pids" ]]; then
+        kill $pids 2>/dev/null || true
+        wait 2>/dev/null || true
+    fi
+    release_lock
+    exit 1
+}
+
+trap handle_signal INT TERM
+
+# ====== Help and Usage =====
 
 usage() {
     cat <<EOF
@@ -591,10 +666,6 @@ check_lustre_xattr() {
 
     # Check if it's a Lustre filesystem
     if mount | grep -q " lustre " && mount | grep "$mount_point" | grep -q " lustre "; then
-        # Check if Lustre has user_xattr enabled (not disabled with nouser_xattr)
-        #if ! mount | grep "$mount_point" | grep -q "nouser_xattr"; then
-        #    result="yes"
-        #fi
         result="yes"
     fi
     log_info "Lustre lustre.lov xattr check for $path, result= $result"
@@ -608,8 +679,8 @@ build_rsync_options() {
     local lustre_at_src="${2:-no}"
     local opts="$RSYNC_OPTS"
 
-    # Check if destination supports -X (extended attributes)
-    # local xattr_support
+    # Check if destination supports -X (extended attributes) - result is cached
+    local xattr_support
     xattr_support=$(check_rsync_xattr_support "$dest")
     if [[ "$xattr_support" == "yes" ]] && [[ "$lustre_at_src" == "no" ]]; then
         opts="$opts -X"
@@ -618,21 +689,11 @@ build_rsync_options() {
         log_info "Skipping -X (lustre at source: $lustre_at_src, xattr_support: $xattr_support)"
     fi
 
-    # Check if destination is on Lustre with lustre.lov xattr
-    #local lustre_check
-    #lustre_check=$(check_lustre_xattr "$dest")
-    #if [[ "$lustre_check" == "yes" ]]; then
-    #    opts="$opts --filter='xattr(lustre.lov)'"
-    #   log_info "Lustre lustre.lov xattr detected at $dest, adding filter"
-    #fi
-
     log_info "build_rsync_options:: Opts= $opts"
     echo "$opts"
 }
 
-# ==============================================================================
-# Main
-# ==============================================================================
+# ====== Main =====
 
 main() {
     # Check dependencies
@@ -682,13 +743,15 @@ main() {
     acquire_lock
 
     # Create log directory (keep previous global logs from other jobs)
-    if [ ! -d $LOG_DIR ]; then /bin/mkdir -p "$LOG_DIR"; fi
+    if [ ! -d "$LOG_DIR" ]; then
+        /bin/mkdir -p "$LOG_DIR"
+    fi
     #
     # Clean task logs only; do not use rm to avoid /bin/rm: Argument list too long error
     find "$LOG_DIR" -maxdepth 1 -type f -name "*.log" -delete
-    
+
     touch "$GLOBAL_LOG"
-   
+
     # Log job start time and configuration
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] Job started at $(date)" >> "$GLOBAL_LOG"
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] BACKUP_JOBS=(${BACKUP_JOBS[*]})" >> "$GLOBAL_LOG"
@@ -726,6 +789,8 @@ main() {
 
     log_info "Starting backup with $jobs workers, depth=$depth"
 
+    local had_pool_errors=0
+
     # Process each backup job
     for job in "${BACKUP_JOBS[@]}"; do
         IFS='|' read -r src dest <<< "$job"
@@ -762,11 +827,12 @@ main() {
         task_count=$(find "$task_queue" -name "task_*" -type f 2>/dev/null | wc -l)
         log_info "Built task queue with $task_count tasks"
 
-        # Run worker pool
-        log_info "run_worker_pool "$task_queue" "$jobs" "$LOG_DIR" "$depth" "$rsync_opts""
-        run_worker_pool "$task_queue" "$jobs" "$LOG_DIR" "$depth" "$rsync_opts"
+        # Run worker pool and track errors
+        if ! run_worker_pool "$task_queue" "$jobs" "$LOG_DIR" "$depth" "$rsync_opts"; then
+            had_pool_errors=1
+        fi
 
-        # Clean up task queue directory
+        # Clean up task queue directory (owned by this function call)
         rm -rf "$task_queue" 2>/dev/null || true
 
     done
@@ -785,6 +851,11 @@ main() {
     # Log job end time
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] --------------------------" >> "$GLOBAL_LOG"
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] Job ended at $(date)" >> "$GLOBAL_LOG"
+
+    # Exit with error if any pool-level failures occurred
+    if [[ $had_pool_errors -eq 1 ]]; then
+        return 1
+    fi
 }
 
 main "$@"

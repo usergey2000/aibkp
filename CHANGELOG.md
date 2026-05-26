@@ -12,6 +12,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `--dry-run` is now added to `rsync_opts` before building the task queue
   - Removed `dry_run` parameter from `run_worker_pool()` and `process_task()` functions
 
+### Fixed
+- **2026-05-26** - Batch of improvements from code review:
+  - **Task claiming race** (critical): Use `ln` (atomic hard link) instead of `mv` for task claiming. `ln` fails with EEXIST if another worker already claimed the task, preventing duplicate work.
+  - **Worker exit codes** (critical): `run_worker_pool()` now tracks failed task PIDs and propagates errors to `main()`, which exits 1 on pool failure. Previously all worker errors were swallowed by `|| true`.
+  - **Remote paths with spaces** (critical): Added `escape_single_quotes()` helper for safe SSH command embedding; rsync options now passed as proper array `"${rsync_args[@]}"` instead of unquoted string.
+  - **Grep filter partial matches** (important): `build_task_queue()` now uses `grep -vE "(^|/)$SRCFILTER(/|$)"` to anchor filter to directory boundaries, preventing false exclusions of similarly-named directories.
+  - **rsync options splitting** (important): Options parsed into array via `eval` and passed as `"${rsync_args[@]}"` so spaces within options are preserved correctly.
+  - **Core count caching** (important): `CORE_CACHE` associative array avoids repeated SSH queries to the same remote host at startup.
+  - **Xattr support caching** (important): `XATTR_CACHE` associative array avoids repeated SSH/hardware probes for xattr support checks across calls.
+  - **Saturday magic number** (minor): Added ISO weekday comment (`1=Mon ... 6=Sat`) to `is_saturday()`.
+  - **LOG_DIR default** (minor): Changed to `${LOG_DIR:-/local/home/...}` so it can be overridden via environment variable.
+  - **Garbled separator characters** (minor): Cleaned up visual decoration on configuration section headers.
+  - **Legacy `let` syntax** (minor): Replaced `let max_depth=$depth+1` with `(( max_depth = depth + 1 ))`.
+  - **build_task_queue logging** (minor): Removed noisy per-task log lines that polluted GLOBAL_LOG; queue building is now silent.
+  - **Signal handling** (moderate): Added `trap handle_signal INT TERM` to forward signals to child processes and release lock on interrupt/kill.
+  - **Dead code** (minor): Removed unused `task_file1` variable in `run_worker_pool()`.
+  - **analyse_logs double-scan** (moderate): `grep -ciE` used for count; error lines reused from the same pass instead of grepping the same files twice.
+  - **grep -v silent suppression** (important): Added `|| true` to `grep -vE` in `build_task_queue()` to handle empty result sets safely under `set -e`.
+  - **Core validation** (important): Validate cores is a positive integer before caching in `CORE_CACHE`.
+  - **Xattr check remote quoting** (critical): Single quotes properly escaped for remote SSH commands in `check_rsync_xattr_support()`.
+  - **Pool error propagation** (critical): `main()` checks `run_worker_pool()` return code and exits 1 on pool-level failures.
+  - **LOG_DIR directory creation** (minor): Added quotes around `$LOG_DIR` in `[ ! -d "$LOG_DIR" ]` to handle paths with spaces.
+
 ### Added
 - **2026-05-15** - Use `find` instead of `ls` in `run_worker_pool()` to handle large task pools
   - Overcomes "Argument list too long" error for large pools
