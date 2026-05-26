@@ -12,7 +12,7 @@ set -euo pipefail
 # ==============================================================================
 # Configuration
 # ==============================================================================
-ADMIN_EMAIL="admin@example.com"
+ADMIN_EMAIL="suzunyan@niu.edu"
 DATE="$(date +%Y%m%d)"
 HOSTNAME="$(hostname -s)"
 # Source|destination pairs (array of "source;destination" strings)
@@ -21,16 +21,14 @@ HOSTNAME="$(hostname -s)"
 # Example: BACKUP_JOBS=("./src|/dest" "server:/path|/local/dest") ./ai-backup.sh
 # Or use a wrapper script that sets the array before sourcing
 # Note: Array cannot be exported from shell environment, so use string fallback
+#
 BACKUP_JOBS=("${BACKUP_JOBS[@]+"${BACKUP_JOBS[@]}"}")
 if [[ ${#BACKUP_JOBS[@]} -eq 0 ]] && [[ -n "${BACKUP_JOBS:-}" ]]; then
     # BACKUP_JOBS is a string (from export), parse it
     IFS=';' read -ra BACKUP_JOBS <<< "${BACKUP_JOBS:-}"
 fi
+
 if [[ ${#BACKUP_JOBS[@]} -eq 0 ]]; then
-    #BACKUP_JOBS=("/lstr/sahara|/raid60/metis_lstr_yesterday")
-    #BACKUP_JOBS=("/lstr/sahara/archive/metis_home/serguei4|/scratch/aibkp/serguei4")
-    #BACKUP_JOBS=("/lstr/sahara/archive/metis_home/serguei4|/raid60/metis_lstr_yesterday/archive/metis_home/serguei4")
-    #
     #BACKUP_JOBS=("./test_data|localhost:$PWD/test_remote_backup/test_data")
     BACKUP_JOBS=("./test_data|$PWD/test_remote_backup/test_data")
 fi
@@ -45,7 +43,7 @@ WEEKDAY_FILTER="climlab_scratch"
 SATURDAY_FILTER="314159027"
 
 # Log directory
-LOG_DIR="./bkplog-${SCRIPT_NAME}"
+LOG_DIR="/local/home/root/lstrbkp/bkplog-${SCRIPT_NAME}"
 
 # Function to get core count from a host (local or remote)
 get_host_cores() {
@@ -158,11 +156,11 @@ if [[ $MAX_JOBS -lt 1 ]]; then
 fi
 
 # Lock file to prevent concurrent runs (use script name without extension)
-
+SCRIPT_NAME=$(basename "$0" .sh)
 LOCK_FILE="/tmp/.running_backup_${SCRIPT_NAME}"
 
 # Global log file (defined after SCRIPT_NAME is set)
-GLOBAL_LOG="${LOG_DIR}/${SCRIPT_NAME}_$(date '+%Y%m%d_%H%M%S').blg"
+GLOBAL_LOG="${LOG_DIR}/${SCRIPT_NAME}_$(date '+%Y%m%d_%H%M%S').sum"
 
 # Check for fd (fast directory finder) dependency
 check_fd_dependencies() {
@@ -285,10 +283,7 @@ build_task_queue() {
     local src_len=${#src_dir}
 
     # Get all directories with their depth in one fd pass
-    # 
-    #We restrict fd directory search with --max-depth that shold be greater or equal to the requested depth  
     let max_depth=$depth+1;
-    #Filter folder list to process here
     SRCFILTER=$(get_filter)
     while IFS= read -r dir; do
         # Calculate depth by counting slashes after removing src_dir prefix
@@ -366,12 +361,13 @@ process_task() {
     #filter=$(get_filter)
 
     # Build rsync options as string
-    # Filter folder list under build_task_queue build_task_queue. instead using exclude option here to save runtime
     #local rsync_opts_str="$rsync_opts --exclude=$filter"
     local rsync_opts_str="$rsync_opts"
 
     # Log the command (with rsync-path for remote)
     if [[ $is_remote -eq 1 ]]; then
+        #log_info "Task $worker_id: rsync $rsync_opts_str --rsync-path='mkdir -p '\''${remote_path}'\'' && rsync' '$src/' '$dest/'"
+        #echo "Running: rsync $rsync_opts_str --rsync-path='mkdir -p '\''${remote_path}'\'' && rsync' '$src/' '$dest/'" >> "$log_file"
         log_info "Task $worker_id: rsync $rsync_opts_str '$src/' '$dest'"
         echo "Running: ssh -n $remote_host \"mkdir -p '$remote_path' \" " >> "$log_file"
         echo "Running: rsync $rsync_opts_str '$src/' '$dest'" >> "$log_file"
@@ -379,14 +375,14 @@ process_task() {
         log_info "Task $worker_id: rsync $rsync_opts_str '$src/' '$dest'"
         echo "Running: rsync $rsync_opts_str '$src/' '$dest'" >> "$log_file"
     fi
-    #echo "DEBUG: remote_path='$remote_path', is_remote=$is_remote" >> "$log_file"
+    echo "DEBUG: remote_path='$remote_path', is_remote=$is_remote" >> "$log_file"
 
     # Execute rsync
     if [[ $is_remote -eq 1 ]]; then
         # Remote destination - create directory first via SSH, then rsync
          ssh -n "$remote_host" "mkdir -p '$remote_path'" 2>/dev/null || true
          rsync $rsync_opts_str "$src/" "$dest/" >> "$log_file" 2>&1
-         #found no way to pass the remote path with spaces with --rsync-path
+         #found no way to pass remote path with spaces"
          #rsync $rsync_opts_str "--rsync-path=\"mkdir -p '${remote_path}' && rsync\"" "$src/" "$dest/" >> "$log_file" 2>&1
     else
         # Local destination - create directory
@@ -426,8 +422,8 @@ run_worker_pool() {
         # This is faster than find + head for small task counts
         # Only get files that don't have .processing suffix (those are being worked on)
         task_file=""
+        task_file1=""
         if [[ ${#running_pids[@]} -lt $jobs ]]; then
-            #NOTE::ls -1 cause the "Argument list too long" for large pools  
             #task_file=$(ls -1 "$task_dir"/task_* 2>/dev/null | grep -v '\.processing$' | head -n 1) || true
             task_file=$(find "$task_dir" -name "task_*" -type f ! -name "*.processing" | head -n 1) || true
         fi
@@ -499,7 +495,7 @@ run_worker_pool() {
     done
 
     # Clean up task directory (including any .processing files)
-    rm -rf "$task_dir"
+    #rm -rf "$task_dir"
 }
 
 # ==============================================================================
@@ -686,11 +682,13 @@ main() {
     acquire_lock
 
     # Create log directory (keep previous global logs from other jobs)
-    mkdir -p "$LOG_DIR"
-    rm -f "$LOG_DIR"/worker_*.log
-    rm -f "$LOG_DIR"/task_*.log "$LOG_DIR"/task_*.log.*  # Clean task logs only
+    if [ ! -d $LOG_DIR ]; then /bin/mkdir -p "$LOG_DIR"; fi
+    #
+    # Clean task logs only; do not use rm to avoid /bin/rm: Argument list too long error
+    find "$LOG_DIR" -maxdepth 1 -type f -name "*.log" -delete
+    
     touch "$GLOBAL_LOG"
-
+   
     # Log job start time and configuration
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] Job started at $(date)" >> "$GLOBAL_LOG"
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] BACKUP_JOBS=(${BACKUP_JOBS[*]})" >> "$GLOBAL_LOG"
